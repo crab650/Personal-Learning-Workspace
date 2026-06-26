@@ -67,7 +67,7 @@
         <span>{{ results.questions|length }}</span>
       </div>
       {% for question in results.questions %}
-        <a class="search-result-row" href="{{ url_for('pages.question_edit', question_id=question.id) }}">
+        <a class="search-result-row" href="{{ url_for('pages.question_detail', question_id=question.id) }}">
           <span class="result-type">Q</span>
           <span class="result-main">
             <strong>{{ question.question }}</strong>

@@ -52,7 +52,7 @@
         </div>
         <span class="row-date">{{ question.updated_at.strftime("%Y-%m-%d") }}</span>
       </div>
-      <h2>{{ question.question }}</h2>
+      <h2><a href="{{ url_for('pages.question_detail', question_id=question.id) }}">{{ question.question }}</a></h2>
       {% if question.gpt_answer %}
         <div class="answer-preview markdown-body compact-markdown">
           {{ rendered_answers[question.id]|safe }}
@@ -73,6 +73,7 @@
             {{ "已完成" if question.is_completed else "未完成" }}
           </button>
         </form>
+        <a class="btn btn-sm btn-primary" href="{{ url_for('pages.question_detail', question_id=question.id) }}">閱讀</a>
         <a class="btn btn-sm btn-outline-secondary" href="{{ url_for('pages.question_edit', question_id=question.id) }}">編輯</a>
         <form method="post" action="{{ url_for('pages.question_delete', question_id=question.id) }}">
           <button class="btn btn-sm btn-outline-danger" onclick="return confirm('確定刪除這個問題？')">刪除</button>

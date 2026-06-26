@@ -44,7 +44,10 @@
       </div>
       <div class="note-card-footer">
         <span>{{ note.updated_at.strftime("%Y-%m-%d") }}</span>
-        <a href="{{ url_for('pages.note_edit', note_id=note.id) }}">編輯</a>
+        <span class="inline-actions">
+          <a href="{{ url_for('pages.note_detail', note_id=note.id) }}">閱讀</a>
+          <a href="{{ url_for('pages.note_edit', note_id=note.id) }}">編輯</a>
+        </span>
       </div>
     </article>
   {% else %}

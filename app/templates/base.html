@@ -68,13 +68,13 @@
           <span>□</span>
           <small>筆記</small>
         </a>
+        <a class="{% if active_page == 'questions' %}active{% endif %}" href="{{ url_for('pages.questions') }}">
+          <span>?</span>
+          <small>問題</small>
+        </a>
         <a class="{% if active_page == 'todos' %}active{% endif %}" href="{{ url_for('pages.todos') }}">
           <span>✓</span>
           <small>待辦</small>
-        </a>
-        <a class="{% if active_page == 'projects' %}active{% endif %}" href="{{ url_for('pages.projects') }}">
-          <span>◇</span>
-          <small>專案</small>
         </a>
         <a class="{% if active_page == 'search' %}active{% endif %}" href="{{ url_for('pages.search') }}">
           <span>⌕</span>

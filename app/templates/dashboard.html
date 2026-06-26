@@ -68,7 +68,7 @@
     </div>
     {% for question in questions %}
       <div class="list-row">
-        <a class="row-title row-link" href="{{ url_for('pages.question_edit', question_id=question.id) }}">{{ question.question }}</a>
+        <a class="row-title row-link" href="{{ url_for('pages.question_detail', question_id=question.id) }}">{{ question.question }}</a>
         <span class="status-text">{{ "已完成" if question.is_completed else "未解決" }}</span>
       </div>
     {% else %}

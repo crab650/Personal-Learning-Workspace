@@ -780,7 +780,7 @@ def global_search():
                 for t in todos
             ],
             "questions": [
-                {"id": question.id, "question": question.question, "url": f"/questions/{question.id}/edit"}
+                {"id": question.id, "question": question.question, "url": f"/questions/{question.id}"}
                 for question in questions
             ],
             "projects": [

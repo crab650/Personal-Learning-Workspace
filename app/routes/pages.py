@@ -422,7 +422,7 @@ def question_new():
         _populate_question_from_form(question)
         db.session.add(question)
         db.session.commit()
-        return redirect(url_for("pages.questions"))
+        return redirect(url_for("pages.question_detail", question_id=question.id))
 
     return render_template(
         "questions/form.html",
@@ -434,6 +434,20 @@ def question_new():
     )
 
 
+@pages_bp.route("/questions/<int:question_id>")
+@login_required
+def question_detail(question_id):
+    question = _get_user_question(question_id)
+    rendered_answer = _render_markdown(question.gpt_answer)
+    return render_template(
+        "questions/detail.html",
+        title="問題閱讀",
+        active_page="questions",
+        question_item=question,
+        rendered_answer=rendered_answer,
+    )
+
+
 @pages_bp.route("/questions/<int:question_id>/edit", methods=["GET", "POST"])
 @login_required
 def question_edit(question_id):
@@ -442,7 +456,7 @@ def question_edit(question_id):
     if request.method == "POST":
         _populate_question_from_form(question)
         db.session.commit()
-        return redirect(url_for("pages.questions"))
+        return redirect(url_for("pages.question_detail", question_id=question.id))
 
     return render_template(
         "questions/form.html",

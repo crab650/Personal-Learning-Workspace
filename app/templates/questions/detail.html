@@ -1,0 +1,70 @@
+{% extends "base.html" %}
+
+{% block title %}問題閱讀 - Personal Learning & Workspace{% endblock %}
+
+{% block content %}
+<div class="page-heading">
+  <div>
+    <h1>問題閱讀</h1>
+    <p>
+      {{ question_item.category.name if question_item.category else "未分類" }}
+      · 更新於 {{ question_item.updated_at.strftime("%Y-%m-%d %H:%M") }}
+    </p>
+  </div>
+  <div class="button-row">
+    <a class="btn btn-outline-secondary" href="{{ url_for('pages.questions') }}">返回列表</a>
+    <a class="btn btn-primary" href="{{ url_for('pages.question_edit', question_id=question_item.id) }}">編輯</a>
+  </div>
+</div>
+
+<section class="panel question-detail-panel">
+  <div class="question-card-head question-detail-meta">
+    <div class="question-labels">
+      <span class="status-pill">{{ question_item.status }}</span>
+      {% if question_item.category %}
+        <span class="tag-badge">{{ question_item.category.name }}</span>
+      {% endif %}
+    </div>
+    <div class="question-labels">
+      <span class="status-pill {% if question_item.is_understood %}success-pill{% else %}neutral-pill{% endif %}">
+        {{ "已理解" if question_item.is_understood else "未理解" }}
+      </span>
+      <span class="status-pill {% if question_item.is_completed %}success-pill{% else %}neutral-pill{% endif %}">
+        {{ "已完成" if question_item.is_completed else "未完成" }}
+      </span>
+    </div>
+  </div>
+
+  <article class="question-reading-block">
+    <h2>問題</h2>
+    <div class="question-reading-text">{{ question_item.question|e|replace('\n', '<br>')|safe }}</div>
+  </article>
+
+  <article class="question-reading-block">
+    <h2>GPT 回答</h2>
+    {% if question_item.gpt_answer %}
+      <div class="markdown-body">{{ rendered_answer|safe }}</div>
+    {% else %}
+      <p class="text-secondary mb-0">尚未記錄 GPT 回答</p>
+    {% endif %}
+  </article>
+</section>
+
+<div class="question-flags question-detail-actions">
+  <form method="post" action="{{ url_for('pages.question_toggle', question_id=question_item.id) }}">
+    <input type="hidden" name="field" value="understood">
+    <button class="btn {% if question_item.is_understood %}btn-success{% else %}btn-outline-secondary{% endif %}">
+      {{ "已理解" if question_item.is_understood else "未理解" }}
+    </button>
+  </form>
+  <form method="post" action="{{ url_for('pages.question_toggle', question_id=question_item.id) }}">
+    <input type="hidden" name="field" value="completed">
+    <button class="btn {% if question_item.is_completed %}btn-success{% else %}btn-outline-secondary{% endif %}">
+      {{ "已完成" if question_item.is_completed else "未完成" }}
+    </button>
+  </form>
+  <form method="post" action="{{ url_for('pages.question_delete', question_id=question_item.id) }}">
+    <button class="btn btn-outline-danger" onclick="return confirm('確定刪除這個問題？')">刪除</button>
+  </form>
+</div>
+{% endblock %}
