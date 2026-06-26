@@ -103,3 +103,29 @@ def register_commands(app):
 
         db.session.commit()
         click.echo(f"Seeded user: {username} / {password}")
+
+    @app.cli.command("seed-basic")
+    @click.option("--username", default="admin")
+    @click.option("--password", default="admin123")
+    @click.option("--display-name", default="Admin")
+    def seed_basic(username, password, display_name):
+        db.create_all()
+
+        user = User.query.filter_by(username=username).first()
+        if not user:
+            user = User(username=username, display_name=display_name, is_admin=True)
+            user.set_password(password)
+            db.session.add(user)
+            db.session.flush()
+        else:
+            user.display_name = display_name
+            user.is_admin = True
+            user.is_active_flag = True
+
+        for name, color in DEFAULT_CATEGORIES:
+            exists = Category.query.filter_by(user_id=user.id, name=name).first()
+            if not exists:
+                db.session.add(Category(user_id=user.id, name=name, color=color))
+
+        db.session.commit()
+        click.echo(f"Seeded basic user and categories: {username} / {password}")

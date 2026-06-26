@@ -99,11 +99,13 @@ Windows 也可以直接執行：
 $env:FLASK_APP = "run.py"
 python -m flask init-db
 python -m flask upgrade-db
+python -m flask seed-basic
 python -m flask seed
 ```
 
 - `init-db`：建立資料表
 - `upgrade-db`：建立資料表並補齊既有資料庫缺少的欄位
+- `seed-basic`：只建立預設管理員與基本分類，不建立示範知識內容
 - `seed`：建立預設管理員、分類、專案與示範資料
 
 ## 環境變數

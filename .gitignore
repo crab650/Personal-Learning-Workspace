@@ -9,6 +9,7 @@ venv/
 env/
 
 # Local runtime data
+*.db
 workspace.db
 uploads/
 
