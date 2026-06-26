@@ -1,0 +1,90 @@
+{% extends "base.html" %}
+
+{% block title %}問題池 - Personal Learning & Workspace{% endblock %}
+
+{% block content %}
+<div class="page-heading">
+  <div>
+    <h1>問題池</h1>
+    <p>記錄學習與工作中遇到的問題、GPT 回答、理解狀態與完成狀態。</p>
+  </div>
+  <a class="btn btn-primary" href="{{ url_for('pages.question_new') }}">新增問題</a>
+</div>
+
+<section class="panel">
+  <form class="question-filter-bar" method="get">
+    <input class="form-control" name="q" value="{{ q }}" placeholder="搜尋問題或 GPT 回答">
+    <select class="form-select" name="status">
+      <option value="">全部狀態</option>
+      {% for status in statuses %}
+        <option value="{{ status }}" {% if selected_status == status %}selected{% endif %}>{{ status }}</option>
+      {% endfor %}
+    </select>
+    <select class="form-select" name="category_id">
+      <option value="">全部分類</option>
+      {% for category in categories %}
+        <option value="{{ category.id }}" {% if selected_category_id == category.id %}selected{% endif %}>{{ category.name }}</option>
+      {% endfor %}
+    </select>
+    <select class="form-select" name="understood">
+      <option value="">理解狀態</option>
+      <option value="yes" {% if selected_understood == "yes" %}selected{% endif %}>已理解</option>
+      <option value="no" {% if selected_understood == "no" %}selected{% endif %}>未理解</option>
+    </select>
+    <select class="form-select" name="completed">
+      <option value="">完成狀態</option>
+      <option value="yes" {% if selected_completed == "yes" %}selected{% endif %}>已完成</option>
+      <option value="no" {% if selected_completed == "no" %}selected{% endif %}>未完成</option>
+    </select>
+    <button class="btn btn-outline-primary">搜尋</button>
+  </form>
+</section>
+
+<section class="question-list">
+  {% for question in questions %}
+    <article class="panel question-card">
+      <div class="question-card-head">
+        <div class="question-labels">
+          <span class="status-pill">{{ question.status }}</span>
+          {% if question.category %}
+            <span class="tag-badge">{{ question.category.name }}</span>
+          {% endif %}
+        </div>
+        <span class="row-date">{{ question.updated_at.strftime("%Y-%m-%d") }}</span>
+      </div>
+      <h2>{{ question.question }}</h2>
+      {% if question.gpt_answer %}
+        <div class="answer-preview markdown-body compact-markdown">
+          {{ rendered_answers[question.id]|safe }}
+        </div>
+      {% else %}
+        <div class="answer-preview muted">尚未記錄 GPT 回答</div>
+      {% endif %}
+      <div class="question-flags">
+        <form method="post" action="{{ url_for('pages.question_toggle', question_id=question.id) }}">
+          <input type="hidden" name="field" value="understood">
+          <button class="btn btn-sm {% if question.is_understood %}btn-success{% else %}btn-outline-secondary{% endif %}">
+            {{ "已理解" if question.is_understood else "未理解" }}
+          </button>
+        </form>
+        <form method="post" action="{{ url_for('pages.question_toggle', question_id=question.id) }}">
+          <input type="hidden" name="field" value="completed">
+          <button class="btn btn-sm {% if question.is_completed %}btn-success{% else %}btn-outline-secondary{% endif %}">
+            {{ "已完成" if question.is_completed else "未完成" }}
+          </button>
+        </form>
+        <a class="btn btn-sm btn-outline-secondary" href="{{ url_for('pages.question_edit', question_id=question.id) }}">編輯</a>
+        <form method="post" action="{{ url_for('pages.question_delete', question_id=question.id) }}">
+          <button class="btn btn-sm btn-outline-danger" onclick="return confirm('確定刪除這個問題？')">刪除</button>
+        </form>
+      </div>
+    </article>
+  {% else %}
+    <section class="panel empty-panel">
+      <h2>尚無問題</h2>
+      <p class="text-secondary">先記錄第一個學習或工作問題。</p>
+      <a class="btn btn-primary" href="{{ url_for('pages.question_new') }}">新增問題</a>
+    </section>
+  {% endfor %}
+</section>
+{% endblock %}

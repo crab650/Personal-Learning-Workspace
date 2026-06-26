@@ -1,0 +1,58 @@
+{% extends "base.html" %}
+
+{% block title %}學習筆記 - Personal Learning & Workspace{% endblock %}
+
+{% block content %}
+<div class="page-heading">
+  <div>
+    <h1>學習筆記</h1>
+    <p>管理 Markdown 筆記、分類、Tag 與收藏。</p>
+  </div>
+  <a class="btn btn-primary" href="{{ url_for('pages.note_new') }}">新增筆記</a>
+</div>
+
+<section class="panel">
+  <form class="filter-bar" method="get">
+    <input class="form-control" name="q" value="{{ q }}" placeholder="搜尋標題或內容">
+    <select class="form-select" name="category_id">
+      <option value="">全部分類</option>
+      {% for category in categories %}
+        <option value="{{ category.id }}" {% if selected_category_id == category.id %}selected{% endif %}>
+          {{ category.name }}
+        </option>
+      {% endfor %}
+    </select>
+    <button class="btn btn-outline-primary">搜尋</button>
+  </form>
+</section>
+
+<section class="note-grid">
+  {% for note in notes %}
+    <article class="note-card">
+      <div class="note-card-top">
+        <span class="tag-badge">{{ note.category.name if note.category else "Note" }}</span>
+        {% if note.is_favorite %}
+          <span class="favorite-mark">收藏</span>
+        {% endif %}
+      </div>
+      <h2><a href="{{ url_for('pages.note_detail', note_id=note.id) }}">{{ note.title }}</a></h2>
+      <p>{{ note.markdown_content|striptags|truncate(120) }}</p>
+      <div class="note-tags">
+        {% for tag in note.tags %}
+          <span>{{ tag.name }}</span>
+        {% endfor %}
+      </div>
+      <div class="note-card-footer">
+        <span>{{ note.updated_at.strftime("%Y-%m-%d") }}</span>
+        <a href="{{ url_for('pages.note_edit', note_id=note.id) }}">編輯</a>
+      </div>
+    </article>
+  {% else %}
+    <section class="panel empty-panel">
+      <h2>尚無筆記</h2>
+      <p class="text-secondary">先建立第一篇 Markdown 學習筆記。</p>
+      <a class="btn btn-primary" href="{{ url_for('pages.note_new') }}">新增筆記</a>
+    </section>
+  {% endfor %}
+</section>
+{% endblock %}

@@ -1,0 +1,107 @@
+{% extends "base.html" %}
+
+{% block title %}待辦事項 - Personal Learning & Workspace{% endblock %}
+
+{% block content %}
+<div class="page-heading">
+  <div>
+    <h1>待辦事項</h1>
+    <p>管理工作與學習任務，追蹤狀態、優先順序、截止日期與提醒時間。</p>
+  </div>
+  <a class="btn btn-primary" href="{{ url_for('pages.todo_new') }}">新增待辦</a>
+</div>
+
+<section class="panel">
+  <form class="todo-filter-bar" method="get">
+    <input class="form-control" name="q" value="{{ q }}" placeholder="搜尋標題或說明">
+    <select class="form-select" name="group_by">
+      <option value="status" {% if group_by == "status" %}selected{% endif %}>依狀態</option>
+      <option value="category" {% if group_by == "category" %}selected{% endif %}>依分類</option>
+      <option value="project" {% if group_by == "project" %}selected{% endif %}>依專案</option>
+    </select>
+    <select class="form-select" name="status">
+      <option value="">全部狀態</option>
+      {% for status in statuses %}
+        <option value="{{ status }}" {% if selected_status == status %}selected{% endif %}>{{ status }}</option>
+      {% endfor %}
+    </select>
+    <select class="form-select" name="priority">
+      <option value="">全部優先</option>
+      {% for priority in priorities %}
+        <option value="{{ priority }}" {% if selected_priority == priority %}selected{% endif %}>{{ priority }}</option>
+      {% endfor %}
+    </select>
+    <select class="form-select" name="category_id">
+      <option value="">全部分類</option>
+      {% for category in categories %}
+        <option value="{{ category.id }}" {% if selected_category_id == category.id %}selected{% endif %}>{{ category.name }}</option>
+      {% endfor %}
+    </select>
+    <select class="form-select" name="project_id">
+      <option value="">全部專案</option>
+      {% for project in projects %}
+        <option value="{{ project.id }}" {% if selected_project_id == project.id %}selected{% endif %}>{{ project.name }}</option>
+      {% endfor %}
+    </select>
+    <button class="btn btn-outline-primary">搜尋</button>
+  </form>
+</section>
+
+<section class="todo-board">
+  {% for group in groups %}
+    <div class="panel todo-column">
+      <div class="panel-header">
+        <h2>{{ group.title }}</h2>
+        <span>{{ group.todos|length }}</span>
+      </div>
+
+      <div class="todo-column-list">
+        {% for todo in group.todos %}
+          <article class="todo-card priority-{{ todo.priority|lower }}">
+            <div class="todo-card-head">
+              <span class="priority-badge">{{ todo.priority }}</span>
+              <div class="todo-card-labels">
+                {% if todo.category %}
+                  <span class="tag-badge">{{ todo.category.name }}</span>
+                {% endif %}
+                {% if todo.project %}
+                  <span class="project-badge">{{ todo.project.name }}</span>
+                {% endif %}
+              </div>
+            </div>
+            <h3 class="{% if todo.status == 'Done' %}done{% endif %}">{{ todo.title }}</h3>
+            {% if todo.description %}
+              <div class="todo-description-preview markdown-body compact-markdown">
+                {{ rendered_descriptions[todo.id]|safe }}
+              </div>
+            {% endif %}
+            <div class="todo-dates">
+              {% if todo.due_date %}
+                <span>截止：{{ todo.due_date.strftime("%Y-%m-%d") }}</span>
+              {% endif %}
+              {% if todo.reminder_at %}
+                <span>提醒：{{ todo.reminder_at.strftime("%Y-%m-%d %H:%M") }}</span>
+              {% endif %}
+            </div>
+            <div class="todo-actions">
+              <form method="post" action="{{ url_for('pages.todo_status', todo_id=todo.id) }}">
+                <select class="form-select form-select-sm" name="status" onchange="this.form.submit()">
+                  {% for option in statuses %}
+                    <option value="{{ option }}" {% if todo.status == option %}selected{% endif %}>{{ option }}</option>
+                  {% endfor %}
+                </select>
+              </form>
+              <a class="btn btn-sm btn-outline-secondary" href="{{ url_for('pages.todo_edit', todo_id=todo.id) }}">編輯</a>
+              <form method="post" action="{{ url_for('pages.todo_delete', todo_id=todo.id) }}">
+                <button class="btn btn-sm btn-outline-danger" onclick="return confirm('確定刪除這個待辦？')">刪除</button>
+              </form>
+            </div>
+          </article>
+        {% else %}
+          <div class="empty-state">沒有項目</div>
+        {% endfor %}
+      </div>
+    </div>
+  {% endfor %}
+</section>
+{% endblock %}

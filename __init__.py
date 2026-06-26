@@ -1,0 +1,1 @@
+"""Smart note application package."""

@@ -1,0 +1,82 @@
+{% extends "base.html" %}
+
+{% block title %}{{ title }} - Personal Learning & Workspace{% endblock %}
+
+{% block content %}
+<div class="page-heading">
+  <div>
+    <h1>{{ title }}</h1>
+    <p>記錄問題、GPT 回答與後續理解狀態。</p>
+  </div>
+  <a class="btn btn-outline-secondary" href="{{ url_for('pages.questions') }}">返回列表</a>
+</div>
+
+<form method="post">
+  <section class="panel question-form-panel">
+    <div class="row g-3">
+      <div class="col-lg-6">
+        <label class="form-label">分類</label>
+        <select class="form-select" name="category_id">
+          <option value="">未分類</option>
+          {% for category in categories %}
+            <option value="{{ category.id }}" {% if question_item and question_item.category_id == category.id %}selected{% endif %}>
+              {{ category.name }}
+            </option>
+          {% endfor %}
+        </select>
+      </div>
+      <div class="col-lg-6">
+        <label class="form-label">狀態</label>
+        <select class="form-select" name="status">
+          {% for status in statuses %}
+            <option value="{{ status }}" {% if (question_item and question_item.status == status) or (not question_item and status == 'Open') %}selected{% endif %}>{{ status }}</option>
+          {% endfor %}
+        </select>
+      </div>
+      <div class="col-12">
+        <label class="form-label">問題</label>
+        <textarea class="form-control question-textarea" name="question" required>{{ question_item.question if question_item else '' }}</textarea>
+      </div>
+      <div class="col-12">
+        <label class="form-label">GPT 回答（Markdown）</label>
+        <div class="question-answer-grid">
+          <textarea id="question-answer-input" class="form-control answer-textarea" name="gpt_answer" spellcheck="false">{{ question_item.gpt_answer if question_item else '' }}</textarea>
+          <article id="question-answer-preview" class="markdown-body answer-markdown-preview"></article>
+        </div>
+      </div>
+      <div class="col-12 question-checks">
+        <div class="form-check">
+          <input class="form-check-input" type="checkbox" name="is_understood" id="is_understood" {% if question_item and question_item.is_understood %}checked{% endif %}>
+          <label class="form-check-label" for="is_understood">已理解</label>
+        </div>
+        <div class="form-check">
+          <input class="form-check-input" type="checkbox" name="is_completed" id="is_completed" {% if question_item and question_item.is_completed %}checked{% endif %}>
+          <label class="form-check-label" for="is_completed">已完成</label>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <div class="form-actions">
+    <button class="btn btn-primary">儲存</button>
+    <a class="btn btn-outline-secondary" href="{{ url_for('pages.questions') }}">取消</a>
+  </div>
+</form>
+{% endblock %}
+
+{% block scripts %}
+<script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
+<script>
+  const answerInput = document.getElementById("question-answer-input");
+  const answerPreview = document.getElementById("question-answer-preview");
+
+  function renderAnswerPreview() {
+    answerPreview.innerHTML = marked.parse(answerInput.value || "");
+  }
+
+  if (answerInput && answerPreview) {
+    answerInput.addEventListener("input", renderAnswerPreview);
+    renderAnswerPreview();
+  }
+</script>
+{% endblock %}

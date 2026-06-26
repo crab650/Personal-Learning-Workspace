@@ -1,0 +1,22 @@
+{% extends "base.html" %}
+
+{% block title %}{{ file.original_name }} - Personal Learning & Workspace{% endblock %}
+
+{% block content %}
+<div class="page-heading">
+  <div>
+    <h1>{{ file.original_name }}</h1>
+    <p>{{ (file.size_bytes / 1024)|round(1) }} KB · {{ file.updated_at.strftime("%Y-%m-%d %H:%M") }}</p>
+  </div>
+  <div class="button-row">
+    <a class="btn btn-outline-secondary" href="{{ url_for('pages.files') }}">返回列表</a>
+    <a class="btn btn-primary" href="{{ url_for('pages.file_download', file_id=file.id) }}">下載</a>
+  </div>
+</div>
+
+<section class="panel note-detail-panel">
+  <article class="markdown-body">
+    {{ rendered_html|safe }}
+  </article>
+</section>
+{% endblock %}

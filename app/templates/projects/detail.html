@@ -1,0 +1,49 @@
+{% extends "base.html" %}
+
+{% block title %}{{ project.name }} - Personal Learning & Workspace{% endblock %}
+
+{% block content %}
+<div class="page-heading">
+  <div>
+    <h1>{{ project.name }}</h1>
+    <p>{{ project.status }} · 更新於 {{ project.updated_at.strftime("%Y-%m-%d %H:%M") }}</p>
+  </div>
+  <div class="button-row">
+    <a class="btn btn-outline-secondary" href="{{ url_for('pages.projects') }}">返回列表</a>
+    <a class="btn btn-outline-primary" href="{{ url_for('pages.project_edit', project_id=project.id) }}">編輯專案</a>
+    <a class="btn btn-primary" href="{{ url_for('pages.todo_new') }}">新增待辦</a>
+  </div>
+</div>
+
+<section class="panel project-detail-panel">
+  <h2>專案說明</h2>
+  <p class="text-secondary mb-0">{{ project.description if project.description else "尚無專案說明" }}</p>
+</section>
+
+<section class="panel project-detail-panel">
+  <div class="panel-header">
+    <h2>專案待辦</h2>
+    <span>{{ todos|length }}</span>
+  </div>
+  {% for todo in todos %}
+    <article class="project-todo-row">
+      <div>
+        <strong class="{% if todo.status == 'Done' %}done{% endif %}">{{ todo.title }}</strong>
+        <div class="todo-meta">{{ todo.status }} · {{ todo.priority }}{% if todo.due_date %} · 截止 {{ todo.due_date.strftime("%Y-%m-%d") }}{% endif %}</div>
+        {% if todo.description %}
+          <div class="todo-description-preview markdown-body compact-markdown mt-2">
+            {{ rendered_descriptions[todo.id]|safe }}
+          </div>
+        {% endif %}
+      </div>
+      <a class="btn btn-sm btn-outline-secondary" href="{{ url_for('pages.todo_edit', todo_id=todo.id) }}">編輯</a>
+    </article>
+  {% else %}
+    <div class="empty-state">這個專案還沒有待辦。</div>
+  {% endfor %}
+</section>
+
+<form method="post" action="{{ url_for('pages.project_delete', project_id=project.id) }}" class="delete-form">
+  <button class="btn btn-outline-danger" onclick="return confirm('確定刪除這個專案？相關 Todo 會保留，但會取消專案關聯。')">刪除專案</button>
+</form>
+{% endblock %}

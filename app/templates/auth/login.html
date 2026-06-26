@@ -1,0 +1,33 @@
+{% extends "base.html" %}
+
+{% block title %}登入 - Personal Learning & Workspace{% endblock %}
+
+{% block public_content %}
+<main class="login-page">
+  <section class="login-panel">
+    <div class="brand login-brand">
+      <div class="brand-mark">PL</div>
+      <div>
+        <div class="brand-title">Personal Learning & Workspace</div>
+        <div class="brand-subtitle">個人學習與工作管理平台</div>
+      </div>
+    </div>
+    <h1>登入</h1>
+    <p class="text-secondary">使用管理員建立的帳號密碼進入系統。</p>
+    {% if error %}
+      <div class="alert alert-danger">{{ error }}</div>
+    {% endif %}
+    <form method="post">
+      <div class="mb-3">
+        <label class="form-label">帳號</label>
+        <input class="form-control" name="username" autocomplete="username" required>
+      </div>
+      <div class="mb-3">
+        <label class="form-label">密碼</label>
+        <input class="form-control" name="password" type="password" autocomplete="current-password" required>
+      </div>
+      <button class="btn btn-primary w-100">登入</button>
+    </form>
+  </section>
+</main>
+{% endblock %}

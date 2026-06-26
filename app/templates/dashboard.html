@@ -1,0 +1,170 @@
+{% extends "base.html" %}
+
+{% block title %}Dashboard - Personal Learning & Workspace{% endblock %}
+
+{% block content %}
+<div class="page-heading">
+  <div>
+    <h1>Dashboard</h1>
+    <p>總覽你的學習進度與待辦事項</p>
+  </div>
+  <div class="today-text">2026年6月25日</div>
+</div>
+
+<div class="stat-grid">
+  <div class="stat-card">
+    <div class="stat-icon blue">N</div>
+    <div>
+      <div class="stat-value">{{ notes|length }}</div>
+      <div class="stat-label">最近筆記</div>
+    </div>
+  </div>
+  <div class="stat-card">
+    <div class="stat-icon green">T</div>
+    <div>
+      <div class="stat-value">{{ todos|selectattr('status', 'equalto', 'Done')|list|length }}</div>
+      <div class="stat-label">已完成待辦</div>
+    </div>
+  </div>
+  <div class="stat-card">
+    <div class="stat-icon orange">Q</div>
+    <div>
+      <div class="stat-value">{{ questions|length }}</div>
+      <div class="stat-label">待解決問題</div>
+    </div>
+  </div>
+  <div class="stat-card">
+    <div class="stat-icon purple">%</div>
+    <div>
+      <div class="stat-value">68%</div>
+      <div class="stat-label">本月學習進度</div>
+    </div>
+  </div>
+</div>
+
+<div class="dashboard-grid">
+  <section class="panel">
+    <div class="panel-header">
+      <h2>最近學習筆記</h2>
+      <a href="{{ url_for('pages.notes') }}">查看全部</a>
+    </div>
+    <div class="list-group list-group-flush">
+      {% for note in notes %}
+        <div class="list-row">
+          <span class="tag-badge">{{ note.category.name if note.category else "Note" }}</span>
+          <a class="row-title row-link" href="{{ url_for('pages.note_detail', note_id=note.id) }}">{{ note.title }}</a>
+          <span class="row-date">{{ note.updated_at.strftime("%m/%d") }}</span>
+        </div>
+      {% else %}
+        <div class="empty-state">尚無筆記</div>
+      {% endfor %}
+    </div>
+  </section>
+
+  <section class="panel">
+    <div class="panel-header">
+      <h2>待解決問題</h2>
+      <a href="{{ url_for('pages.questions') }}">查看全部</a>
+    </div>
+    {% for question in questions %}
+      <div class="list-row">
+        <a class="row-title row-link" href="{{ url_for('pages.question_edit', question_id=question.id) }}">{{ question.question }}</a>
+        <span class="status-text">{{ "已完成" if question.is_completed else "未解決" }}</span>
+      </div>
+    {% else %}
+      <div class="empty-state">尚無問題</div>
+    {% endfor %}
+  </section>
+
+  <section class="panel tall">
+    <div class="panel-header">
+      <h2>今日待辦事項</h2>
+      <a href="{{ url_for('pages.todos') }}">查看全部</a>
+    </div>
+    <div id="todo-list">
+      {% for todo in todos %}
+        <div class="todo-item" draggable="true" data-id="{{ todo.id }}">
+          <input class="form-check-input" type="checkbox" {% if todo.status == "Done" %}checked{% endif %}>
+          <div class="todo-body">
+            <div class="row-title {% if todo.status == 'Done' %}done{% endif %}">{{ todo.title }}</div>
+            <div class="todo-meta">{{ todo.priority }} · {{ todo.status }}</div>
+          </div>
+        </div>
+      {% else %}
+        <div class="empty-state">今日沒有待辦</div>
+      {% endfor %}
+    </div>
+    <a class="btn btn-primary btn-sm mt-3" href="{{ url_for('pages.todos') }}">新增待辦</a>
+  </section>
+
+  <section class="panel wide">
+    <div class="panel-header">
+      <h2>學習進度統計</h2>
+      <span>本月</span>
+    </div>
+    <div class="chart-placeholder">
+      <div class="donut">42.5<br><small>小時</small></div>
+      <div class="chart-lines">
+        <div><span class="dot blue-bg"></span>ERP 14.5 小時</div>
+        <div><span class="dot green-bg"></span>SQL 10.0 小時</div>
+        <div><span class="dot purple-bg"></span>AI 8.5 小時</div>
+        <div><span class="dot orange-bg"></span>英文 5.5 小時</div>
+      </div>
+    </div>
+  </section>
+
+  <section class="panel">
+    <div class="panel-header">
+      <h2>最近上傳檔案</h2>
+      <a href="{{ url_for('pages.files') }}">查看全部</a>
+    </div>
+    {% for file in files %}
+      <div class="list-row">
+        <span class="file-icon">F</span>
+        {% if file.original_name.lower().endswith(('.md', '.markdown', '.txt')) %}
+          <a class="row-title row-link" href="{{ url_for('pages.file_view', file_id=file.id) }}">{{ file.original_name }}</a>
+        {% else %}
+          <a class="row-title row-link" href="{{ url_for('pages.file_download', file_id=file.id) }}">{{ file.original_name }}</a>
+        {% endif %}
+        <span class="row-date">{{ (file.size_bytes / 1024)|round(1) }} KB</span>
+      </div>
+    {% else %}
+      <div class="empty-state">尚無檔案</div>
+    {% endfor %}
+  </section>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+  const todoList = document.getElementById("todo-list");
+  let dragged = null;
+
+  if (todoList) {
+    todoList.addEventListener("dragstart", (event) => {
+      dragged = event.target.closest(".todo-item");
+    });
+
+    todoList.addEventListener("dragover", (event) => {
+      event.preventDefault();
+      const target = event.target.closest(".todo-item");
+      if (!target || target === dragged) return;
+      const box = target.getBoundingClientRect();
+      const after = event.clientY > box.top + box.height / 2;
+      todoList.insertBefore(dragged, after ? target.nextSibling : target);
+    });
+
+    todoList.addEventListener("drop", async () => {
+      const items = [...todoList.querySelectorAll(".todo-item")].map((item, index) => ({
+        id: Number(item.dataset.id),
+        sort_order: index + 1
+      }));
+      await fetch("{{ url_for('api.reorder_todos') }}", {
+        method: "PUT",
+        headers: {"Content-Type": "application/json"},
+        body: JSON.stringify({items})
+      });
+    });
+  }
+</script>
+{% endblock %}

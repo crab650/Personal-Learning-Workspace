@@ -1,0 +1,49 @@
+{% extends "base.html" %}
+
+{% block title %}專案管理 - Personal Learning & Workspace{% endblock %}
+
+{% block content %}
+<div class="page-heading">
+  <div>
+    <h1>專案管理</h1>
+    <p>管理專案狀態、說明與專案底下的待辦事項。</p>
+  </div>
+  <a class="btn btn-primary" href="{{ url_for('pages.project_new') }}">新增專案</a>
+</div>
+
+<section class="panel">
+  <form class="project-filter-bar" method="get">
+    <input class="form-control" name="q" value="{{ q }}" placeholder="搜尋專案名稱或說明">
+    <select class="form-select" name="status">
+      <option value="">全部狀態</option>
+      {% for status in statuses %}
+        <option value="{{ status }}" {% if selected_status == status %}selected{% endif %}>{{ status }}</option>
+      {% endfor %}
+    </select>
+    <button class="btn btn-outline-primary">搜尋</button>
+  </form>
+</section>
+
+<section class="project-grid">
+  {% for project in projects %}
+    <article class="project-card">
+      <div class="project-card-head">
+        <span class="status-pill">{{ project.status }}</span>
+        <span class="row-date">{{ project.updated_at.strftime("%Y-%m-%d") }}</span>
+      </div>
+      <h2><a href="{{ url_for('pages.project_detail', project_id=project.id) }}">{{ project.name }}</a></h2>
+      <p>{{ project.description|truncate(150) if project.description else "尚無專案說明" }}</p>
+      <div class="project-card-footer">
+        <span>{{ todo_counts[project.id] }} 個待辦</span>
+        <a href="{{ url_for('pages.project_edit', project_id=project.id) }}">編輯</a>
+      </div>
+    </article>
+  {% else %}
+    <section class="panel empty-panel">
+      <h2>尚無專案</h2>
+      <p class="text-secondary">先建立第一個專案，再把待辦掛到專案底下。</p>
+      <a class="btn btn-primary" href="{{ url_for('pages.project_new') }}">新增專案</a>
+    </section>
+  {% endfor %}
+</section>
+{% endblock %}

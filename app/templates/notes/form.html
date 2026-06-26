@@ -1,0 +1,86 @@
+{% extends "base.html" %}
+
+{% block title %}{{ title }} - Personal Learning & Workspace{% endblock %}
+
+{% block content %}
+<div class="page-heading">
+  <div>
+    <h1>{{ title }}</h1>
+    <p>使用 Markdown 撰寫內容，右側會即時預覽。</p>
+  </div>
+  <a class="btn btn-outline-secondary" href="{{ url_for('pages.notes') }}">返回列表</a>
+</div>
+
+<form method="post" class="note-editor-form">
+  <section class="panel note-meta-panel">
+    <div class="row g-3">
+      <div class="col-lg-5">
+        <label class="form-label">標題</label>
+        <input class="form-control" name="title" value="{{ note.title if note else '' }}" required>
+      </div>
+      <div class="col-lg-3">
+        <label class="form-label">分類</label>
+        <select class="form-select" name="category_id">
+          <option value="">未分類</option>
+          {% for category in categories %}
+            <option value="{{ category.id }}" {% if note and note.category_id == category.id %}selected{% endif %}>
+              {{ category.name }}
+            </option>
+          {% endfor %}
+        </select>
+      </div>
+      <div class="col-lg-3">
+        <label class="form-label">Tag</label>
+        <input class="form-control" name="tags" value="{{ tag_text }}" placeholder="ERP, SQL, AI">
+      </div>
+      <div class="col-lg-1 d-flex align-items-end">
+        <div class="form-check mb-2">
+          <input class="form-check-input" type="checkbox" name="is_favorite" id="is_favorite" {% if note and note.is_favorite %}checked{% endif %}>
+          <label class="form-check-label" for="is_favorite">收藏</label>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <section class="editor-grid">
+    <div class="panel editor-panel">
+      <div class="panel-header">
+        <h2>Markdown</h2>
+      </div>
+      <textarea id="markdown-input" class="form-control markdown-textarea" name="markdown_content" spellcheck="false">{{ note.markdown_content if note else '' }}</textarea>
+    </div>
+    <div class="panel editor-panel">
+      <div class="panel-header">
+        <h2>Preview</h2>
+      </div>
+      <article id="markdown-preview" class="markdown-body"></article>
+    </div>
+  </section>
+
+  <div class="form-actions">
+    <button class="btn btn-primary">儲存</button>
+    {% if note %}
+      <a class="btn btn-outline-secondary" href="{{ url_for('pages.note_detail', note_id=note.id) }}">取消</a>
+    {% else %}
+      <a class="btn btn-outline-secondary" href="{{ url_for('pages.notes') }}">取消</a>
+    {% endif %}
+  </div>
+</form>
+{% endblock %}
+
+{% block scripts %}
+<script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
+<script>
+  const input = document.getElementById("markdown-input");
+  const preview = document.getElementById("markdown-preview");
+
+  function renderPreview() {
+    preview.innerHTML = marked.parse(input.value || "");
+  }
+
+  if (input && preview) {
+    input.addEventListener("input", renderPreview);
+    renderPreview();
+  }
+</script>
+{% endblock %}

@@ -1,0 +1,37 @@
+{% extends "base.html" %}
+
+{% block title %}{{ note.title }} - Personal Learning & Workspace{% endblock %}
+
+{% block content %}
+<div class="page-heading">
+  <div>
+    <h1>{{ note.title }}</h1>
+    <p>
+      {{ note.category.name if note.category else "未分類" }}
+      · 更新於 {{ note.updated_at.strftime("%Y-%m-%d %H:%M") }}
+    </p>
+  </div>
+  <div class="button-row">
+    <a class="btn btn-outline-secondary" href="{{ url_for('pages.notes') }}">返回列表</a>
+    <a class="btn btn-primary" href="{{ url_for('pages.note_edit', note_id=note.id) }}">編輯</a>
+  </div>
+</div>
+
+<section class="panel note-detail-panel">
+  <div class="note-tags mb-3">
+    {% if note.is_favorite %}
+      <span>收藏</span>
+    {% endif %}
+    {% for tag in note.tags %}
+      <span>{{ tag.name }}</span>
+    {% endfor %}
+  </div>
+  <article class="markdown-body">
+    {{ rendered_html|safe }}
+  </article>
+</section>
+
+<form method="post" action="{{ url_for('pages.note_delete', note_id=note.id) }}" class="delete-form">
+  <button class="btn btn-outline-danger" onclick="return confirm('確定刪除這篇筆記？')">刪除筆記</button>
+</form>
+{% endblock %}

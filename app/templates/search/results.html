@@ -1,0 +1,128 @@
+{% extends "base.html" %}
+
+{% block title %}全站搜尋 - Personal Learning & Workspace{% endblock %}
+
+{% block content %}
+<div class="page-heading">
+  <div>
+    <h1>全站搜尋</h1>
+    <p>搜尋筆記、待辦、問題與檔案。</p>
+  </div>
+</div>
+
+<section class="panel">
+  <form class="search-page-form" method="get">
+    <input class="form-control" name="q" value="{{ q }}" placeholder="輸入關鍵字">
+    <button class="btn btn-primary">搜尋</button>
+  </form>
+</section>
+
+{% if q %}
+  <div class="search-summary">
+    找到 {{ total_count }} 筆與「{{ q }}」相關的結果
+  </div>
+
+  <section class="search-grid">
+    <div class="panel search-section">
+      <div class="panel-header">
+        <h2>學習筆記</h2>
+        <span>{{ results.notes|length }}</span>
+      </div>
+      {% for note in results.notes %}
+        <a class="search-result-row" href="{{ url_for('pages.note_detail', note_id=note.id) }}">
+          <span class="result-type">Note</span>
+          <span class="result-main">
+            <strong>{{ note.title }}</strong>
+            <small>{{ note.markdown_content|striptags|truncate(120) }}</small>
+          </span>
+          <span class="row-date">{{ note.updated_at.strftime("%Y-%m-%d") }}</span>
+        </a>
+      {% else %}
+        <div class="empty-state">沒有筆記結果</div>
+      {% endfor %}
+    </div>
+
+    <div class="panel search-section">
+      <div class="panel-header">
+        <h2>待辦事項</h2>
+        <span>{{ results.todos|length }}</span>
+      </div>
+      {% for todo in results.todos %}
+        <a class="search-result-row" href="{{ url_for('pages.todo_edit', todo_id=todo.id) }}">
+          <span class="result-type">Todo</span>
+          <span class="result-main">
+            <strong>{{ todo.title }}</strong>
+            <small>{{ todo.status }} · {{ todo.priority }}{% if todo.project %} · {{ todo.project.name }}{% endif %}</small>
+          </span>
+          <span class="row-date">{{ todo.updated_at.strftime("%Y-%m-%d") }}</span>
+        </a>
+      {% else %}
+        <div class="empty-state">沒有待辦結果</div>
+      {% endfor %}
+    </div>
+
+    <div class="panel search-section">
+      <div class="panel-header">
+        <h2>問題池</h2>
+        <span>{{ results.questions|length }}</span>
+      </div>
+      {% for question in results.questions %}
+        <a class="search-result-row" href="{{ url_for('pages.question_edit', question_id=question.id) }}">
+          <span class="result-type">Q</span>
+          <span class="result-main">
+            <strong>{{ question.question }}</strong>
+            <small>{{ question.gpt_answer|striptags|truncate(120) }}</small>
+          </span>
+          <span class="row-date">{{ question.updated_at.strftime("%Y-%m-%d") }}</span>
+        </a>
+      {% else %}
+        <div class="empty-state">沒有問題結果</div>
+      {% endfor %}
+    </div>
+
+    <div class="panel search-section">
+      <div class="panel-header">
+        <h2>專案</h2>
+        <span>{{ results.projects|length }}</span>
+      </div>
+      {% for project in results.projects %}
+        <a class="search-result-row" href="{{ url_for('pages.project_detail', project_id=project.id) }}">
+          <span class="result-type">Proj</span>
+          <span class="result-main">
+            <strong>{{ project.name }}</strong>
+            <small>{{ project.status }} · {{ project.description|truncate(120) }}</small>
+          </span>
+          <span class="row-date">{{ project.updated_at.strftime("%Y-%m-%d") }}</span>
+        </a>
+      {% else %}
+        <div class="empty-state">沒有專案結果</div>
+      {% endfor %}
+    </div>
+
+    <div class="panel search-section">
+      <div class="panel-header">
+        <h2>檔案</h2>
+        <span>{{ results.files|length }}</span>
+      </div>
+      {% for file in results.files %}
+        {% set is_markdown = file.original_name.lower().endswith(('.md', '.markdown', '.txt')) %}
+        <a class="search-result-row" href="{{ url_for('pages.file_view' if is_markdown else 'pages.file_download', file_id=file.id) }}">
+          <span class="result-type">File</span>
+          <span class="result-main">
+            <strong>{{ file.original_name }}</strong>
+            <small>{{ (file.size_bytes / 1024)|round(1) }} KB · {{ file.category.name if file.category else "未分類" }}</small>
+          </span>
+          <span class="row-date">{{ file.updated_at.strftime("%Y-%m-%d") }}</span>
+        </a>
+      {% else %}
+        <div class="empty-state">沒有檔案結果</div>
+      {% endfor %}
+    </div>
+  </section>
+{% else %}
+  <section class="panel search-empty-panel">
+    <h2>輸入關鍵字開始搜尋</h2>
+    <p class="text-secondary mb-0">可搜尋筆記標題與內容、Todo、問題與 GPT 回答、檔案名稱。</p>
+  </section>
+{% endif %}
+{% endblock %}

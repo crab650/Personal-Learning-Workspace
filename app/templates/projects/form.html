@@ -1,0 +1,45 @@
+{% extends "base.html" %}
+
+{% block title %}{{ title }} - Personal Learning & Workspace{% endblock %}
+
+{% block content %}
+<div class="page-heading">
+  <div>
+    <h1>{{ title }}</h1>
+    <p>設定專案名稱、狀態與說明。</p>
+  </div>
+  <a class="btn btn-outline-secondary" href="{{ url_for('pages.projects') }}">返回列表</a>
+</div>
+
+{% if error %}
+  <div class="alert alert-danger">{{ error }}</div>
+{% endif %}
+
+<form method="post">
+  <section class="panel project-form-panel">
+    <div class="row g-3">
+      <div class="col-lg-8">
+        <label class="form-label">專案名稱</label>
+        <input class="form-control" name="name" value="{{ project.name if project else '' }}" required>
+      </div>
+      <div class="col-lg-4">
+        <label class="form-label">狀態</label>
+        <select class="form-select" name="status">
+          {% for status in statuses %}
+            <option value="{{ status }}" {% if (project and project.status == status) or (not project and status == 'Active') %}selected{% endif %}>{{ status }}</option>
+          {% endfor %}
+        </select>
+      </div>
+      <div class="col-12">
+        <label class="form-label">說明</label>
+        <textarea class="form-control project-description" name="description">{{ project.description if project else '' }}</textarea>
+      </div>
+    </div>
+  </section>
+
+  <div class="form-actions">
+    <button class="btn btn-primary">儲存</button>
+    <a class="btn btn-outline-secondary" href="{{ url_for('pages.projects') }}">取消</a>
+  </div>
+</form>
+{% endblock %}

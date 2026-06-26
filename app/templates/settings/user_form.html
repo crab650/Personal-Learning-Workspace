@@ -1,0 +1,51 @@
+{% extends "base.html" %}
+
+{% block title %}{{ title }} - Personal Learning & Workspace{% endblock %}
+
+{% block content %}
+<div class="page-heading">
+  <div>
+    <h1>{{ title }}</h1>
+    <p>{% if user_item %}修改使用者資料、密碼與權限。{% else %}建立新的登入帳號。{% endif %}</p>
+  </div>
+  <a class="btn btn-outline-secondary" href="{{ url_for('pages.users') }}">返回列表</a>
+</div>
+
+{% if error %}
+  <div class="alert alert-danger">{{ error }}</div>
+{% endif %}
+
+<form method="post">
+  <section class="panel user-form-panel">
+    <div class="row g-3">
+      <div class="col-lg-6">
+        <label class="form-label">帳號</label>
+        <input class="form-control" name="username" value="{{ user_item.username if user_item else '' }}" {% if user_item %}disabled{% endif %} required>
+      </div>
+      <div class="col-lg-6">
+        <label class="form-label">顯示名稱</label>
+        <input class="form-control" name="display_name" value="{{ user_item.display_name if user_item else '' }}" required>
+      </div>
+      <div class="col-lg-6">
+        <label class="form-label">{% if user_item %}新密碼{% else %}密碼{% endif %}</label>
+        <input class="form-control" name="password" type="password" {% if not user_item %}required{% endif %}>
+      </div>
+      <div class="col-12 user-checks">
+        <div class="form-check">
+          <input class="form-check-input" type="checkbox" name="is_admin" id="is_admin" {% if user_item and user_item.is_admin %}checked{% endif %}>
+          <label class="form-check-label" for="is_admin">管理員</label>
+        </div>
+        <div class="form-check">
+          <input class="form-check-input" type="checkbox" name="is_active_flag" id="is_active_flag" {% if not user_item or user_item.is_active %}checked{% endif %}>
+          <label class="form-check-label" for="is_active_flag">啟用</label>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <div class="form-actions">
+    <button class="btn btn-primary">儲存</button>
+    <a class="btn btn-outline-secondary" href="{{ url_for('pages.users') }}">取消</a>
+  </div>
+</form>
+{% endblock %}

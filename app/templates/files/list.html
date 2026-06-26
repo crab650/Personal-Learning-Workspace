@@ -1,0 +1,74 @@
+{% extends "base.html" %}
+
+{% block title %}檔案管理 - Personal Learning & Workspace{% endblock %}
+
+{% block content %}
+<div class="page-heading">
+  <div>
+    <h1>檔案管理</h1>
+    <p>上傳、分類、下載與閱讀 Markdown 檔案。</p>
+  </div>
+</div>
+
+<section class="panel file-upload-panel">
+  <form class="file-upload-form" method="post" action="{{ url_for('pages.file_upload') }}" enctype="multipart/form-data">
+    <input class="form-control" type="file" name="file" required>
+    <select class="form-select" name="category_id">
+      <option value="">未分類</option>
+      {% for category in categories %}
+        <option value="{{ category.id }}">{{ category.name }}</option>
+      {% endfor %}
+    </select>
+    <button class="btn btn-primary">上傳</button>
+  </form>
+</section>
+
+<section class="panel">
+  <form class="filter-bar" method="get">
+    <input class="form-control" name="q" value="{{ q }}" placeholder="搜尋檔名">
+    <select class="form-select" name="category_id">
+      <option value="">全部分類</option>
+      {% for category in categories %}
+        <option value="{{ category.id }}" {% if selected_category_id == category.id %}selected{% endif %}>{{ category.name }}</option>
+      {% endfor %}
+    </select>
+    <button class="btn btn-outline-primary">搜尋</button>
+  </form>
+</section>
+
+<section class="panel file-table-panel">
+  <div class="file-table">
+    <div class="file-table-head">
+      <span>檔名</span>
+      <span>分類</span>
+      <span>大小</span>
+      <span>下載</span>
+      <span>更新時間</span>
+      <span>操作</span>
+    </div>
+    {% for file in files %}
+      <div class="file-table-row">
+        <div class="file-name-cell">
+          <span class="file-icon">{{ file.original_name.rsplit('.', 1)[-1][:3]|upper if '.' in file.original_name else 'F' }}</span>
+          <span>{{ file.original_name }}</span>
+        </div>
+        <span>{{ file.category.name if file.category else "未分類" }}</span>
+        <span>{{ (file.size_bytes / 1024)|round(1) }} KB</span>
+        <span>{{ file.download_count }}</span>
+        <span>{{ file.updated_at.strftime("%Y-%m-%d") }}</span>
+        <div class="file-actions">
+          {% if file.original_name.lower().endswith(('.md', '.markdown', '.txt')) %}
+            <a class="btn btn-sm btn-outline-primary" href="{{ url_for('pages.file_view', file_id=file.id) }}">閱讀</a>
+          {% endif %}
+          <a class="btn btn-sm btn-outline-secondary" href="{{ url_for('pages.file_download', file_id=file.id) }}">下載</a>
+          <form method="post" action="{{ url_for('pages.file_delete', file_id=file.id) }}">
+            <button class="btn btn-sm btn-outline-danger" onclick="return confirm('確定刪除這個檔案？')">刪除</button>
+          </form>
+        </div>
+      </div>
+    {% else %}
+      <div class="empty-state">尚無檔案</div>
+    {% endfor %}
+  </div>
+</section>
+{% endblock %}

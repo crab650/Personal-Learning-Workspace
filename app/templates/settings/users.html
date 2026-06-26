@@ -1,0 +1,45 @@
+{% extends "base.html" %}
+
+{% block title %}使用者管理 - Personal Learning & Workspace{% endblock %}
+
+{% block content %}
+<div class="page-heading">
+  <div>
+    <h1>使用者管理</h1>
+    <p>建立使用者、修改密碼、設定管理員與啟用狀態。</p>
+  </div>
+  <a class="btn btn-primary" href="{{ url_for('pages.user_new') }}">新增使用者</a>
+</div>
+
+<section class="panel user-table-panel">
+  <div class="user-table">
+    <div class="user-table-head">
+      <span>帳號</span>
+      <span>名稱</span>
+      <span>角色</span>
+      <span>狀態</span>
+      <span>建立時間</span>
+      <span>操作</span>
+    </div>
+    {% for user in users %}
+      <div class="user-table-row">
+        <strong>{{ user.username }}</strong>
+        <span>{{ user.display_name }}</span>
+        <span>{{ "管理員" if user.is_admin else "使用者" }}</span>
+        <span class="{% if user.is_active %}text-success{% else %}text-danger{% endif %}">
+          {{ "啟用" if user.is_active else "停用" }}
+        </span>
+        <span>{{ user.created_at.strftime("%Y-%m-%d") }}</span>
+        <div class="user-actions">
+          <a class="btn btn-sm btn-outline-secondary" href="{{ url_for('pages.user_edit', user_id=user.id) }}">編輯</a>
+          <form method="post" action="{{ url_for('pages.user_toggle', user_id=user.id) }}">
+            <button class="btn btn-sm btn-outline-warning" {% if user.id == current_user.id %}disabled{% endif %}>
+              {{ "停用" if user.is_active else "啟用" }}
+            </button>
+          </form>
+        </div>
+      </div>
+    {% endfor %}
+  </div>
+</section>
+{% endblock %}
