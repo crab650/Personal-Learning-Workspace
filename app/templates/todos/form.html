@@ -93,6 +93,7 @@
 
   function renderTodoDescription() {
     todoDescriptionPreview.innerHTML = marked.parse(todoDescriptionInput.value || "");
+    window.highlightMarkdown(todoDescriptionPreview);
   }
 
   if (todoDescriptionInput && todoDescriptionPreview) {
