@@ -76,6 +76,7 @@
 
   function renderPreview() {
     preview.innerHTML = marked.parse(input.value || "");
+    window.highlightMarkdown(preview);
   }
 
   if (input && preview) {

@@ -299,7 +299,13 @@ def list_notes():
     query = Note.query.filter_by(user_id=current_user.id)
     if q:
         like = f"%{q}%"
-        query = query.filter(or_(Note.title.ilike(like), Note.markdown_content.ilike(like)))
+        query = query.filter(
+            or_(
+                Note.title.ilike(like),
+                Note.markdown_content.ilike(like),
+                Note.tags.any(Tag.name.ilike(like)),
+            )
+        )
     if category_id:
         query = query.filter_by(category_id=category_id)
     notes = query.order_by(Note.updated_at.desc()).all()
@@ -726,7 +732,11 @@ def global_search():
     notes = (
         Note.query.filter(
             Note.user_id == user_id,
-            or_(Note.title.ilike(like), Note.markdown_content.ilike(like)),
+            or_(
+                Note.title.ilike(like),
+                Note.markdown_content.ilike(like),
+                Note.tags.any(Tag.name.ilike(like)),
+            ),
         )
         .order_by(Note.updated_at.desc())
         .limit(10)
