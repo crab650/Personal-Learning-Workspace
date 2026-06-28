@@ -1,0 +1,40 @@
+{% for question in questions %}
+  <article class="panel question-card">
+    <div class="question-card-head">
+      <div class="question-labels">
+        <span class="status-pill">{{ question.status }}</span>
+        {% if question.category %}
+          <span class="tag-badge">{{ question.category.name }}</span>
+        {% endif %}
+      </div>
+      <span class="row-date">{{ question.updated_at.strftime("%Y-%m-%d") }}</span>
+    </div>
+    <h2><a href="{{ url_for('pages.question_detail', question_id=question.id, next=return_to) }}">{{ question.question }}</a></h2>
+    {% if question.gpt_answer %}
+      <div class="answer-preview markdown-body compact-markdown">
+        {{ rendered_answers[question.id]|safe }}
+      </div>
+    {% else %}
+      <div class="answer-preview muted">尚未記錄 GPT 回答</div>
+    {% endif %}
+    <div class="question-flags">
+      <form method="post" action="{{ url_for('pages.question_toggle', question_id=question.id) }}">
+        <input type="hidden" name="field" value="understood">
+        <button class="btn btn-sm {% if question.is_understood %}btn-success{% else %}btn-outline-secondary{% endif %}">
+          {{ "已理解" if question.is_understood else "未理解" }}
+        </button>
+      </form>
+      <form method="post" action="{{ url_for('pages.question_toggle', question_id=question.id) }}">
+        <input type="hidden" name="field" value="completed">
+        <button class="btn btn-sm {% if question.is_completed %}btn-success{% else %}btn-outline-secondary{% endif %}">
+          {{ "已完成" if question.is_completed else "未完成" }}
+        </button>
+      </form>
+      <a class="btn btn-sm btn-primary" href="{{ url_for('pages.question_detail', question_id=question.id, next=return_to) }}">閱讀</a>
+      <a class="btn btn-sm btn-outline-secondary" href="{{ url_for('pages.question_edit', question_id=question.id, next=return_to) }}">編輯</a>
+      <form method="post" action="{{ url_for('pages.question_delete', question_id=question.id) }}">
+        <button class="btn btn-sm btn-outline-danger" onclick="return confirm('確定刪除這個問題？')">刪除</button>
+      </form>
+    </div>
+  </article>
+{% endfor %}

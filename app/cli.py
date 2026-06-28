@@ -33,6 +33,17 @@ def register_commands(app):
             db.session.execute(text("ALTER TABLE todos ADD COLUMN project_id INTEGER"))
             db.session.commit()
             click.echo("Added todos.project_id.")
+        if "created_by_name" not in todo_columns:
+            db.session.execute(text("ALTER TABLE todos ADD COLUMN created_by_name VARCHAR(80)"))
+            db.session.execute(
+                text(
+                    "UPDATE todos SET created_by_name = "
+                    "(SELECT display_name FROM users WHERE users.id = todos.user_id) "
+                    "WHERE created_by_name IS NULL"
+                )
+            )
+            db.session.commit()
+            click.echo("Added todos.created_by_name.")
         user_columns = {column["name"] for column in inspector.get_columns("users")}
         if "is_active_flag" not in user_columns:
             db.session.execute(text("ALTER TABLE users ADD COLUMN is_active_flag BOOLEAN NOT NULL DEFAULT 1"))
@@ -77,9 +88,9 @@ def register_commands(app):
         if not Todo.query.filter_by(user_id=user.id).first():
             db.session.add_all(
                 [
-                    Todo(user_id=user.id, project_id=projects["ERP 學習計畫"].id, title="學習 ERP 第5章：採購管理", priority="High", sort_order=1),
-                    Todo(user_id=user.id, project_id=projects["門禁系統 API"].id, title="修改門禁系統 API", priority="High", sort_order=2),
-                    Todo(user_id=user.id, project_id=projects["SQL 能力提升"].id, title="SQL 練習：Window Function", priority="Medium", sort_order=3),
+                    Todo(user_id=user.id, project_id=projects["ERP 學習計畫"].id, title="學習 ERP 第5章：採購管理", created_by_name=user.display_name, priority="High", sort_order=1),
+                    Todo(user_id=user.id, project_id=projects["門禁系統 API"].id, title="修改門禁系統 API", created_by_name=user.display_name, priority="High", sort_order=2),
+                    Todo(user_id=user.id, project_id=projects["SQL 能力提升"].id, title="SQL 練習：Window Function", created_by_name=user.display_name, priority="Medium", sort_order=3),
                 ]
             )
         else:

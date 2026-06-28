@@ -10,6 +10,7 @@
   </div>
   <div class="button-row">
     <a class="btn btn-outline-secondary" href="{{ url_for('pages.projects') }}">返回列表</a>
+    <a class="btn btn-outline-primary" href="{{ url_for('shared.manage', project_id=project.id) }}">分享專案</a>
     <a class="btn btn-outline-primary" href="{{ url_for('pages.project_edit', project_id=project.id) }}">編輯專案</a>
     <a class="btn btn-primary" href="{{ url_for('pages.todo_new') }}">新增待辦</a>
   </div>

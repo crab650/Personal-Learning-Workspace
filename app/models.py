@@ -86,6 +86,34 @@ class Note(db.Model):
     user = db.relationship("User", backref="notes")
     category = db.relationship("Category", backref="notes")
     tags = db.relationship("Tag", secondary=note_tags, backref="notes")
+    images = db.relationship(
+        "NoteImage",
+        back_populates="note",
+        cascade="all, delete-orphan",
+        order_by="NoteImage.created_at.asc()",
+    )
+
+
+class NoteImage(db.Model):
+    __tablename__ = "note_images"
+
+    id = db.Column(db.Integer, primary_key=True)
+    user_id = db.Column(db.Integer, db.ForeignKey("users.id"), nullable=False, index=True)
+    note_id = db.Column(
+        db.Integer,
+        db.ForeignKey("notes.id", ondelete="CASCADE"),
+        nullable=True,
+        index=True,
+    )
+    upload_session = db.Column(db.String(64), nullable=True, index=True)
+    stored_name = db.Column(db.String(80), nullable=False, unique=True)
+    size_bytes = db.Column(db.Integer, nullable=False)
+    width = db.Column(db.Integer, nullable=False)
+    height = db.Column(db.Integer, nullable=False)
+    created_at = db.Column(db.DateTime(timezone=True), default=utc_now, nullable=False)
+
+    note = db.relationship("Note", back_populates="images")
+    user = db.relationship("User", backref="note_images")
 
 
 class Todo(db.Model):
@@ -95,7 +123,8 @@ class Todo(db.Model):
     user_id = db.Column(db.Integer, db.ForeignKey("users.id"), nullable=False, index=True)
     category_id = db.Column(db.Integer, db.ForeignKey("categories.id"), nullable=True)
     project_id = db.Column(db.Integer, db.ForeignKey("projects.id"), nullable=True)
-    title = db.Column(db.String(200), nullable=False)
+    title = db.Column(db.String(500), nullable=False)
+    created_by_name = db.Column(db.String(80), nullable=True)
     description = db.Column(db.Text, default="", nullable=False)
     priority = db.Column(db.String(20), default="Medium", nullable=False)
     status = db.Column(db.String(20), default="Todo", nullable=False)
@@ -111,6 +140,11 @@ class Todo(db.Model):
     user = db.relationship("User", backref="todos")
     category = db.relationship("Category", backref="todos")
     project = db.relationship("Project", backref="todos")
+    shared_images = db.relationship(
+        "SharedTodoImage",
+        back_populates="todo",
+        cascade="all, delete-orphan",
+    )
 
 
 class Project(db.Model):
@@ -127,8 +161,109 @@ class Project(db.Model):
     )
 
     user = db.relationship("User", backref="projects")
+    share = db.relationship(
+        "ProjectShare",
+        back_populates="project",
+        cascade="all, delete-orphan",
+        uselist=False,
+    )
 
     __table_args__ = (db.UniqueConstraint("user_id", "name", name="uq_project_user_name"),)
+
+
+class ProjectShare(db.Model):
+    __tablename__ = "project_shares"
+
+    id = db.Column(db.Integer, primary_key=True)
+    project_id = db.Column(
+        db.Integer,
+        db.ForeignKey("projects.id"),
+        nullable=False,
+        unique=True,
+        index=True,
+    )
+    token = db.Column(db.String(96), nullable=False, unique=True, index=True)
+    password_hash = db.Column(db.String(255), nullable=True)
+    expires_on = db.Column(db.Date, nullable=True)
+    is_active = db.Column(db.Boolean, default=True, nullable=False)
+    created_at = db.Column(db.DateTime(timezone=True), default=utc_now, nullable=False)
+    updated_at = db.Column(
+        db.DateTime(timezone=True), default=utc_now, onupdate=utc_now, nullable=False
+    )
+
+    project = db.relationship("Project", back_populates="share")
+    audit_logs = db.relationship(
+        "ProjectShareAudit",
+        back_populates="share",
+        cascade="all, delete-orphan",
+        order_by="ProjectShareAudit.created_at.desc()",
+    )
+    images = db.relationship(
+        "SharedTodoImage",
+        back_populates="share",
+        cascade="all, delete-orphan",
+    )
+
+    def set_password(self, password):
+        self.password_hash = generate_password_hash(password) if password else None
+
+    def check_password(self, password):
+        return bool(self.password_hash) and check_password_hash(self.password_hash, password)
+
+    @property
+    def has_password(self):
+        return bool(self.password_hash)
+
+
+class ProjectShareAudit(db.Model):
+    __tablename__ = "project_share_audits"
+
+    id = db.Column(db.Integer, primary_key=True)
+    project_share_id = db.Column(
+        db.Integer,
+        db.ForeignKey("project_shares.id"),
+        nullable=False,
+        index=True,
+    )
+    todo_id = db.Column(
+        db.Integer,
+        db.ForeignKey("todos.id", ondelete="SET NULL"),
+        nullable=True,
+        index=True,
+    )
+    actor_name = db.Column(db.String(80), nullable=False)
+    action = db.Column(db.String(30), nullable=False)
+    details = db.Column(db.Text, default="", nullable=False)
+    created_at = db.Column(db.DateTime(timezone=True), default=utc_now, nullable=False)
+
+    share = db.relationship("ProjectShare", back_populates="audit_logs")
+
+
+class SharedTodoImage(db.Model):
+    __tablename__ = "shared_todo_images"
+
+    id = db.Column(db.Integer, primary_key=True)
+    todo_id = db.Column(
+        db.Integer,
+        db.ForeignKey("todos.id", ondelete="CASCADE"),
+        nullable=False,
+        index=True,
+    )
+    project_share_id = db.Column(
+        db.Integer,
+        db.ForeignKey("project_shares.id", ondelete="CASCADE"),
+        nullable=False,
+        index=True,
+    )
+    stored_name = db.Column(db.String(80), nullable=False, unique=True)
+    size_bytes = db.Column(db.Integer, nullable=False)
+    width = db.Column(db.Integer, nullable=False)
+    height = db.Column(db.Integer, nullable=False)
+    uploaded_by = db.Column(db.String(80), nullable=False)
+    created_at = db.Column(db.DateTime(timezone=True), default=utc_now, nullable=False)
+
+    todo = db.relationship("Todo", back_populates="shared_images")
+    share = db.relationship("ProjectShare", back_populates="images")
 
 
 class Question(db.Model):
@@ -149,6 +284,34 @@ class Question(db.Model):
 
     user = db.relationship("User", backref="questions")
     category = db.relationship("Category", backref="questions")
+    images = db.relationship(
+        "QuestionImage",
+        back_populates="question_item",
+        cascade="all, delete-orphan",
+        order_by="QuestionImage.created_at.asc()",
+    )
+
+
+class QuestionImage(db.Model):
+    __tablename__ = "question_images"
+
+    id = db.Column(db.Integer, primary_key=True)
+    user_id = db.Column(db.Integer, db.ForeignKey("users.id"), nullable=False, index=True)
+    question_id = db.Column(
+        db.Integer,
+        db.ForeignKey("questions.id", ondelete="CASCADE"),
+        nullable=True,
+        index=True,
+    )
+    upload_session = db.Column(db.String(64), nullable=True, index=True)
+    stored_name = db.Column(db.String(80), nullable=False, unique=True)
+    size_bytes = db.Column(db.Integer, nullable=False)
+    width = db.Column(db.Integer, nullable=False)
+    height = db.Column(db.Integer, nullable=False)
+    created_at = db.Column(db.DateTime(timezone=True), default=utc_now, nullable=False)
+
+    question_item = db.relationship("Question", back_populates="images")
+    user = db.relationship("User", backref="question_images")
 
 
 class StoredFile(db.Model):

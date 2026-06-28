@@ -11,7 +11,7 @@
   <a class="btn btn-primary" href="{{ url_for('pages.note_new') }}">新增筆記</a>
 </div>
 
-<section class="panel">
+<section class="panel note-search-panel">
   <form class="filter-bar" method="get">
     <input class="form-control" name="q" value="{{ q }}" placeholder="搜尋標題、內容或 Tag">
     <select class="form-select" name="category_id">
@@ -24,38 +24,81 @@
     </select>
     <button class="btn btn-outline-primary">搜尋</button>
   </form>
+  <nav class="note-category-chips" aria-label="筆記分類">
+    <a class="{% if not selected_category_id %}active{% endif %}" href="{{ url_for('pages.notes', q=q or none) }}">全部</a>
+    {% for category in categories %}
+      <a class="{% if selected_category_id == category.id %}active{% endif %}" href="{{ url_for('pages.notes', q=q or none, category_id=category.id) }}">{{ category.name }}</a>
+    {% endfor %}
+  </nav>
 </section>
 
-<section class="note-grid">
-  {% for note in notes %}
-    <article class="note-card">
-      <div class="note-card-top">
-        <span class="tag-badge">{{ note.category.name if note.category else "Note" }}</span>
-        {% if note.is_favorite %}
-          <span class="favorite-mark">收藏</span>
-        {% endif %}
-      </div>
-      <h2><a href="{{ url_for('pages.note_detail', note_id=note.id) }}">{{ note.title }}</a></h2>
-      <p>{{ note.markdown_content|striptags|truncate(120) }}</p>
-      <div class="note-tags">
-        {% for tag in note.tags %}
-          <span>{{ tag.name }}</span>
-        {% endfor %}
-      </div>
-      <div class="note-card-footer">
-        <span>{{ note.updated_at.strftime("%Y-%m-%d") }}</span>
-        <span class="inline-actions">
-          <a href="{{ url_for('pages.note_detail', note_id=note.id) }}">閱讀</a>
-          <a href="{{ url_for('pages.note_edit', note_id=note.id) }}">編輯</a>
-        </span>
-      </div>
-    </article>
+<section id="note-grid" class="note-grid">
+  {% if notes %}
+    {% include "notes/_cards.html" %}
   {% else %}
     <section class="panel empty-panel">
       <h2>尚無筆記</h2>
       <p class="text-secondary">先建立第一篇 Markdown 學習筆記。</p>
       <a class="btn btn-primary" href="{{ url_for('pages.note_new') }}">新增筆記</a>
     </section>
-  {% endfor %}
+  {% endif %}
 </section>
+
+{% if pagination.pages > 1 %}
+  <nav class="note-desktop-pagination" aria-label="筆記分頁">
+    {% for page_number in pagination.iter_pages(left_edge=1, left_current=2, right_current=2, right_edge=1) %}
+      {% if page_number %}
+        <a class="{% if page_number == pagination.page %}active{% endif %}" href="{{ url_for('pages.notes', q=q or none, category_id=selected_category_id, page=page_number) }}">{{ page_number }}</a>
+      {% else %}
+        <span>…</span>
+      {% endif %}
+    {% endfor %}
+  </nav>
+{% endif %}
+
+{% if pagination.has_next %}
+  <button
+    id="note-load-more"
+    class="btn btn-outline-primary note-load-more"
+    type="button"
+    data-next-page="{{ pagination.next_num }}"
+  >載入更多</button>
+{% endif %}
+{% endblock %}
+
+{% block scripts %}
+  {{ super() }}
+  <script>
+    (() => {
+      const button = document.getElementById("note-load-more");
+      const grid = document.getElementById("note-grid");
+      if (!button || !grid) return;
+
+      button.addEventListener("click", async () => {
+        button.disabled = true;
+        button.textContent = "載入中…";
+        const params = new URLSearchParams(window.location.search);
+        params.set("page", button.dataset.nextPage);
+        params.set("partial", "1");
+        try {
+          const response = await fetch(`{{ url_for("pages.notes") }}?${params.toString()}`, {
+            headers: {"Accept": "application/json"}
+          });
+          if (!response.ok) throw new Error("load failed");
+          const payload = await response.json();
+          grid.insertAdjacentHTML("beforeend", payload.html);
+          if (payload.has_more) {
+            button.dataset.nextPage = payload.next_page;
+            button.disabled = false;
+            button.textContent = "載入更多";
+          } else {
+            button.remove();
+          }
+        } catch (error) {
+          button.disabled = false;
+          button.textContent = "重新載入";
+        }
+      });
+    })();
+  </script>
 {% endblock %}

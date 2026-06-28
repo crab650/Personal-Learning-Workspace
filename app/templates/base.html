@@ -9,7 +9,7 @@
     <link href="{{ url_for('static', filename='css/app.css') }}" rel="stylesheet">
   </head>
   <body>
-    {% if current_user.is_authenticated %}
+    {% if current_user.is_authenticated and not force_public_layout|default(false) %}
       <div class="app-shell">
         <aside class="sidebar">
           <div class="brand">

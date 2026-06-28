@@ -12,13 +12,17 @@
 </div>
 
 <form method="post" class="note-editor-form">
+  {% if return_to %}
+    <input type="hidden" name="next" value="{{ return_to }}">
+  {% endif %}
+  <input type="hidden" name="upload_session" value="{{ upload_session|default('') }}">
   <section class="panel note-meta-panel">
     <div class="row g-3">
-      <div class="col-lg-5">
+      <div class="col-lg-4">
         <label class="form-label">標題</label>
         <input class="form-control" name="title" value="{{ note.title if note else '' }}" required>
       </div>
-      <div class="col-lg-3">
+      <div class="col-lg-4">
         <label class="form-label">分類</label>
         <select class="form-select" name="category_id">
           <option value="">未分類</option>
@@ -28,6 +32,7 @@
             </option>
           {% endfor %}
         </select>
+        <input class="form-control mt-2" name="new_category_name" maxlength="80" placeholder="或輸入新的分類名稱">
       </div>
       <div class="col-lg-3">
         <label class="form-label">Tag</label>
@@ -39,6 +44,36 @@
           <label class="form-check-label" for="is_favorite">收藏</label>
         </div>
       </div>
+    </div>
+  </section>
+
+  <section
+    id="note-image-panel"
+    class="panel note-image-panel"
+    data-note-id="{{ note.id if note else '' }}"
+    data-upload-session="{{ upload_session|default('') }}"
+  >
+    <div class="note-image-toolbar">
+      <div>
+        <h2>筆記圖片</h2>
+        <p>可選擇、拖曳或直接貼上圖片；上傳後會自動插入 Markdown。</p>
+      </div>
+      <label id="note-image-upload-label" class="btn btn-outline-primary note-image-upload-label {% if note and note.images|length >= 5 %}d-none{% endif %}">
+        選擇圖片
+        <input id="note-image-input" type="file" accept="image/*" multiple hidden>
+      </label>
+    </div>
+    <div id="note-image-list" class="note-image-list">
+      {% if note %}
+        {% for image in note.images %}
+          <figure class="note-image-item" data-image-id="{{ image.id }}" data-image-url="{{ url_for('pages.note_image_file', image_id=image.id) }}">
+            <a href="{{ url_for('pages.note_image_file', image_id=image.id) }}" target="_blank" rel="noopener">
+              <img src="{{ url_for('pages.note_image_file', image_id=image.id) }}" alt="筆記圖片" loading="lazy">
+            </a>
+            <button type="button" data-delete-note-image="{{ image.id }}" aria-label="移除圖片">×</button>
+          </figure>
+        {% endfor %}
+      {% endif %}
     </div>
   </section>
 
@@ -60,7 +95,7 @@
   <div class="form-actions">
     <button class="btn btn-primary">儲存</button>
     {% if note %}
-      <a class="btn btn-outline-secondary" href="{{ url_for('pages.note_detail', note_id=note.id) }}">取消</a>
+      <a class="btn btn-outline-secondary" href="{{ url_for('pages.note_detail', note_id=note.id, next=return_to) }}">取消</a>
     {% else %}
       <a class="btn btn-outline-secondary" href="{{ url_for('pages.notes') }}">取消</a>
     {% endif %}
@@ -83,5 +118,146 @@
     input.addEventListener("input", renderPreview);
     renderPreview();
   }
+
+  const imagePanel = document.getElementById("note-image-panel");
+  const imageInput = document.getElementById("note-image-input");
+  const imageList = document.getElementById("note-image-list");
+  const imageUploadLabel = document.getElementById("note-image-upload-label");
+  const noteImageUploadUrl = {{ url_for("pages.note_image_upload")|tojson }};
+  const noteImageDeleteUrl = {{ url_for("pages.note_image_delete", image_id=0)|tojson }};
+
+  async function prepareNoteImage(file) {
+    if (!window.createImageBitmap) return file;
+    try {
+      const bitmap = await createImageBitmap(file);
+      const scale = Math.min(1, 1600 / Math.max(bitmap.width, bitmap.height));
+      const canvas = document.createElement("canvas");
+      canvas.width = Math.max(1, Math.round(bitmap.width * scale));
+      canvas.height = Math.max(1, Math.round(bitmap.height * scale));
+      canvas.getContext("2d").drawImage(bitmap, 0, 0, canvas.width, canvas.height);
+      bitmap.close();
+      const blob = await new Promise((resolve) => canvas.toBlob(resolve, "image/webp", 0.72));
+      return blob ? new File([blob], "note-image.webp", {type: "image/webp"}) : file;
+    } catch (error) {
+      return file;
+    }
+  }
+
+  function noteImageElement(image) {
+    const figure = document.createElement("figure");
+    figure.className = "note-image-item";
+    figure.dataset.imageId = image.id;
+    figure.dataset.imageUrl = image.url;
+    const link = document.createElement("a");
+    link.href = image.url;
+    link.target = "_blank";
+    link.rel = "noopener";
+    const thumbnail = document.createElement("img");
+    thumbnail.src = image.url;
+    thumbnail.alt = "筆記圖片";
+    thumbnail.loading = "lazy";
+    const remove = document.createElement("button");
+    remove.type = "button";
+    remove.dataset.deleteNoteImage = image.id;
+    remove.setAttribute("aria-label", "移除圖片");
+    remove.textContent = "×";
+    link.append(thumbnail);
+    figure.append(link, remove);
+    return figure;
+  }
+
+  function insertImageMarkdown(url) {
+    const markdown = `![筆記圖片](${url})`;
+    const start = input.selectionStart;
+    const end = input.selectionEnd;
+    const prefix = start > 0 && input.value[start - 1] !== "\n" ? "\n" : "";
+    const suffix = end < input.value.length && input.value[end] !== "\n" ? "\n" : "";
+    input.setRangeText(`${prefix}${markdown}${suffix}`, start, end, "end");
+    input.dispatchEvent(new Event("input", {bubbles: true}));
+    input.focus();
+  }
+
+  function updateImageLimit() {
+    imageUploadLabel.classList.toggle(
+      "d-none",
+      imageList.querySelectorAll(".note-image-item").length >= 5
+    );
+  }
+
+  async function uploadNoteImage(file) {
+    const prepared = await prepareNoteImage(file);
+    const data = new FormData();
+    data.append("image", prepared, prepared.name);
+    if (imagePanel.dataset.noteId) data.append("note_id", imagePanel.dataset.noteId);
+    if (imagePanel.dataset.uploadSession) data.append("upload_session", imagePanel.dataset.uploadSession);
+    const response = await fetch(noteImageUploadUrl, {method: "POST", body: data});
+    const payload = await response.json();
+    if (!response.ok) throw new Error(payload.error || "圖片上傳失敗");
+    imageList.append(noteImageElement(payload));
+    insertImageMarkdown(payload.url);
+    updateImageLimit();
+  }
+
+  async function uploadNoteImages(files) {
+    const images = [...files].filter((file) => file.type.startsWith("image/"));
+    if (!images.length) return;
+    imageUploadLabel.classList.add("is-uploading");
+    try {
+      for (const file of images) await uploadNoteImage(file);
+    } catch (error) {
+      window.alert(error.message || "圖片上傳失敗。");
+    } finally {
+      imageUploadLabel.classList.remove("is-uploading");
+      imageInput.value = "";
+    }
+  }
+
+  imageInput?.addEventListener("change", () => uploadNoteImages(imageInput.files));
+  input?.addEventListener("paste", (event) => {
+    const files = [...event.clipboardData.items]
+      .filter((item) => item.kind === "file" && item.type.startsWith("image/"))
+      .map((item) => item.getAsFile())
+      .filter(Boolean);
+    if (files.length) {
+      event.preventDefault();
+      uploadNoteImages(files);
+    }
+  });
+  input?.addEventListener("dragover", (event) => {
+    if ([...event.dataTransfer.items].some((item) => item.type.startsWith("image/"))) {
+      event.preventDefault();
+      input.classList.add("is-image-dragover");
+    }
+  });
+  input?.addEventListener("dragleave", () => input.classList.remove("is-image-dragover"));
+  input?.addEventListener("drop", (event) => {
+    input.classList.remove("is-image-dragover");
+    const files = [...event.dataTransfer.files].filter((file) => file.type.startsWith("image/"));
+    if (files.length) {
+      event.preventDefault();
+      uploadNoteImages(files);
+    }
+  });
+
+  imageList?.addEventListener("click", async (event) => {
+    const button = event.target.closest("[data-delete-note-image]");
+    if (!button || !window.confirm("確定移除這張圖片？")) return;
+    button.disabled = true;
+    const figure = button.closest(".note-image-item");
+    const url = figure.dataset.imageUrl;
+    const endpoint = noteImageDeleteUrl.replace("/images/0", `/images/${button.dataset.deleteNoteImage}`);
+    try {
+      const response = await fetch(endpoint, {method: "DELETE"});
+      if (!response.ok) throw new Error("delete failed");
+      const escaped = url.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+      input.value = input.value.replace(new RegExp(`!\\[[^\\]]*\\]\\(${escaped}\\)\\n?`, "g"), "");
+      input.dispatchEvent(new Event("input", {bubbles: true}));
+      figure.remove();
+      updateImageLimit();
+    } catch (error) {
+      button.disabled = false;
+      window.alert("圖片移除失敗。");
+    }
+  });
 </script>
 {% endblock %}

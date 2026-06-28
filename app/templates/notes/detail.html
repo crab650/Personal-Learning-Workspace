@@ -12,8 +12,8 @@
     </p>
   </div>
   <div class="button-row">
-    <a class="btn btn-outline-secondary" href="{{ url_for('pages.notes') }}">返回列表</a>
-    <a class="btn btn-primary" href="{{ url_for('pages.note_edit', note_id=note.id) }}">編輯</a>
+    <a class="btn btn-outline-secondary" href="{{ return_to }}">返回列表</a>
+    <a class="btn btn-primary" href="{{ url_for('pages.note_edit', note_id=note.id, next=return_to) }}">編輯</a>
   </div>
 </div>
 

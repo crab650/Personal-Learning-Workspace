@@ -8,10 +8,14 @@
     <h1>{{ title }}</h1>
     <p>記錄問題、GPT 回答與後續理解狀態。</p>
   </div>
-  <a class="btn btn-outline-secondary" href="{{ url_for('pages.questions') }}">返回列表</a>
+  <a class="btn btn-outline-secondary" href="{{ return_to|default(url_for('pages.questions'), true) }}">返回列表</a>
 </div>
 
 <form method="post">
+  {% if return_to %}
+    <input type="hidden" name="next" value="{{ return_to }}">
+  {% endif %}
+  <input type="hidden" name="upload_session" value="{{ upload_session|default('') }}">
   <section class="panel question-form-panel">
     <div class="row g-3">
       <div class="col-lg-6">
@@ -35,7 +39,41 @@
       </div>
       <div class="col-12">
         <label class="form-label">問題</label>
-        <textarea class="form-control question-textarea" name="question" required>{{ question_item.question if question_item else '' }}</textarea>
+        <textarea id="question-input" class="form-control question-textarea" name="question" required>{{ question_item.question if question_item else '' }}</textarea>
+      </div>
+      <div class="col-12">
+        <div
+          id="question-image-panel"
+          class="question-image-panel"
+          data-question-id="{{ question_item.id if question_item else '' }}"
+          data-upload-session="{{ upload_session|default('') }}"
+        >
+          <div class="question-image-toolbar">
+            <div>
+              <h2>問題圖片</h2>
+              <p>可選擇、拖曳或貼上圖片；在 GPT 回答欄貼上時會一併插入 Markdown。</p>
+            </div>
+            <label id="question-image-upload-label" class="btn btn-outline-primary question-image-upload-label {% if question_item and question_item.images|length >= 5 %}d-none{% endif %}">
+              選擇圖片
+              <input id="question-image-input" type="file" accept="image/*" multiple hidden>
+            </label>
+          </div>
+          <div id="question-image-list" class="question-image-list">
+            {% if question_item %}
+              {% for image in question_item.images %}
+                <figure class="question-image-item" data-image-id="{{ image.id }}" data-image-url="{{ url_for('pages.question_image_file', image_id=image.id) }}">
+                  <a href="{{ url_for('pages.question_image_file', image_id=image.id) }}" target="_blank" rel="noopener">
+                    <img src="{{ url_for('pages.question_image_file', image_id=image.id) }}" alt="問題圖片" loading="lazy">
+                  </a>
+                  <figcaption>
+                    <button type="button" data-insert-question-image>插入回答</button>
+                    <button type="button" class="danger" data-delete-question-image="{{ image.id }}">移除</button>
+                  </figcaption>
+                </figure>
+              {% endfor %}
+            {% endif %}
+          </div>
+        </div>
       </div>
       <div class="col-12">
         <label class="form-label">GPT 回答（Markdown）</label>
@@ -59,7 +97,7 @@
 
   <div class="form-actions">
     <button class="btn btn-primary">儲存</button>
-    <a class="btn btn-outline-secondary" href="{{ url_for('pages.questions') }}">取消</a>
+    <a class="btn btn-outline-secondary" href="{{ return_to|default(url_for('pages.questions'), true) }}">取消</a>
   </div>
 </form>
 {% endblock %}
@@ -67,6 +105,7 @@
 {% block scripts %}
 <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
 <script>
+  const questionInput = document.getElementById("question-input");
   const answerInput = document.getElementById("question-answer-input");
   const answerPreview = document.getElementById("question-answer-preview");
 
@@ -79,5 +118,182 @@
     answerInput.addEventListener("input", renderAnswerPreview);
     renderAnswerPreview();
   }
+
+  const imagePanel = document.getElementById("question-image-panel");
+  const imageInput = document.getElementById("question-image-input");
+  const imageList = document.getElementById("question-image-list");
+  const imageUploadLabel = document.getElementById("question-image-upload-label");
+  const questionImageUploadUrl = {{ url_for("pages.question_image_upload")|tojson }};
+  const questionImageDeleteUrl = {{ url_for("pages.question_image_delete", image_id=0)|tojson }};
+
+  async function prepareQuestionImage(file) {
+    if (!window.createImageBitmap) return file;
+    try {
+      const bitmap = await createImageBitmap(file);
+      const scale = Math.min(1, 1600 / Math.max(bitmap.width, bitmap.height));
+      const canvas = document.createElement("canvas");
+      canvas.width = Math.max(1, Math.round(bitmap.width * scale));
+      canvas.height = Math.max(1, Math.round(bitmap.height * scale));
+      canvas.getContext("2d").drawImage(bitmap, 0, 0, canvas.width, canvas.height);
+      bitmap.close();
+      const blob = await new Promise((resolve) => canvas.toBlob(resolve, "image/webp", 0.72));
+      return blob ? new File([blob], "question-image.webp", {type: "image/webp"}) : file;
+    } catch (error) {
+      return file;
+    }
+  }
+
+  function questionImageElement(image) {
+    const figure = document.createElement("figure");
+    figure.className = "question-image-item";
+    figure.dataset.imageId = image.id;
+    figure.dataset.imageUrl = image.url;
+
+    const link = document.createElement("a");
+    link.href = image.url;
+    link.target = "_blank";
+    link.rel = "noopener";
+    const thumbnail = document.createElement("img");
+    thumbnail.src = image.url;
+    thumbnail.alt = "問題圖片";
+    thumbnail.loading = "lazy";
+    link.append(thumbnail);
+
+    const actions = document.createElement("figcaption");
+    const insert = document.createElement("button");
+    insert.type = "button";
+    insert.dataset.insertQuestionImage = "";
+    insert.textContent = "插入回答";
+    const remove = document.createElement("button");
+    remove.type = "button";
+    remove.className = "danger";
+    remove.dataset.deleteQuestionImage = image.id;
+    remove.textContent = "移除";
+    actions.append(insert, remove);
+    figure.append(link, actions);
+    return figure;
+  }
+
+  function insertAnswerImage(url) {
+    const markdown = `![問題圖片](${url})`;
+    const start = answerInput.selectionStart;
+    const end = answerInput.selectionEnd;
+    const prefix = start > 0 && answerInput.value[start - 1] !== "\n" ? "\n" : "";
+    const suffix = end < answerInput.value.length && answerInput.value[end] !== "\n" ? "\n" : "";
+    answerInput.setRangeText(`${prefix}${markdown}${suffix}`, start, end, "end");
+    answerInput.dispatchEvent(new Event("input", {bubbles: true}));
+    answerInput.focus();
+  }
+
+  function updateQuestionImageLimit() {
+    imageUploadLabel.classList.toggle(
+      "d-none",
+      imageList.querySelectorAll(".question-image-item").length >= 5
+    );
+  }
+
+  async function uploadQuestionImage(file, insertIntoAnswer) {
+    const prepared = await prepareQuestionImage(file);
+    const data = new FormData();
+    data.append("image", prepared, prepared.name);
+    if (imagePanel.dataset.questionId) data.append("question_id", imagePanel.dataset.questionId);
+    if (imagePanel.dataset.uploadSession) data.append("upload_session", imagePanel.dataset.uploadSession);
+    const response = await fetch(questionImageUploadUrl, {method: "POST", body: data});
+    const payload = await response.json();
+    if (!response.ok) throw new Error(payload.error || "圖片上傳失敗");
+    imageList.append(questionImageElement(payload));
+    if (insertIntoAnswer) insertAnswerImage(payload.url);
+    updateQuestionImageLimit();
+  }
+
+  async function uploadQuestionImages(files, insertIntoAnswer = false) {
+    const images = [...files].filter((file) => file.type.startsWith("image/"));
+    if (!images.length) return;
+    imageUploadLabel.classList.add("is-uploading");
+    try {
+      for (const file of images) await uploadQuestionImage(file, insertIntoAnswer);
+    } catch (error) {
+      window.alert(error.message || "圖片上傳失敗。");
+    } finally {
+      imageUploadLabel.classList.remove("is-uploading");
+      imageInput.value = "";
+    }
+  }
+
+  function pastedImages(event) {
+    return [...event.clipboardData.items]
+      .filter((item) => item.kind === "file" && item.type.startsWith("image/"))
+      .map((item) => item.getAsFile())
+      .filter(Boolean);
+  }
+
+  function enableImageDrop(target, insertIntoAnswer) {
+    target?.addEventListener("dragover", (event) => {
+      if ([...event.dataTransfer.items].some((item) => item.type.startsWith("image/"))) {
+        event.preventDefault();
+        target.classList.add("is-image-dragover");
+      }
+    });
+    target?.addEventListener("dragleave", () => target.classList.remove("is-image-dragover"));
+    target?.addEventListener("drop", (event) => {
+      target.classList.remove("is-image-dragover");
+      const files = [...event.dataTransfer.files].filter((file) => file.type.startsWith("image/"));
+      if (files.length) {
+        event.preventDefault();
+        uploadQuestionImages(files, insertIntoAnswer);
+      }
+    });
+  }
+
+  imageInput?.addEventListener("change", () => uploadQuestionImages(imageInput.files));
+  questionInput?.addEventListener("paste", (event) => {
+    const files = pastedImages(event);
+    if (files.length) {
+      event.preventDefault();
+      uploadQuestionImages(files);
+    }
+  });
+  answerInput?.addEventListener("paste", (event) => {
+    const files = pastedImages(event);
+    if (files.length) {
+      event.preventDefault();
+      uploadQuestionImages(files, true);
+    }
+  });
+  enableImageDrop(questionInput, false);
+  enableImageDrop(answerInput, true);
+
+  imageList?.addEventListener("click", async (event) => {
+    const figure = event.target.closest(".question-image-item");
+    if (!figure) return;
+    if (event.target.closest("[data-insert-question-image]")) {
+      insertAnswerImage(figure.dataset.imageUrl);
+      return;
+    }
+
+    const button = event.target.closest("[data-delete-question-image]");
+    if (!button || !window.confirm("確定移除這張圖片？")) return;
+    button.disabled = true;
+    const url = figure.dataset.imageUrl;
+    const endpoint = questionImageDeleteUrl.replace(
+      "/images/0",
+      `/images/${button.dataset.deleteQuestionImage}`
+    );
+    try {
+      const response = await fetch(endpoint, {method: "DELETE"});
+      if (!response.ok) throw new Error("delete failed");
+      const escaped = url.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+      answerInput.value = answerInput.value.replace(
+        new RegExp(`!\\[[^\\]]*\\]\\(${escaped}\\)\\n?`, "g"),
+        ""
+      );
+      answerInput.dispatchEvent(new Event("input", {bubbles: true}));
+      figure.remove();
+      updateQuestionImageLimit();
+    } catch (error) {
+      button.disabled = false;
+      window.alert("圖片移除失敗。");
+    }
+  });
 </script>
 {% endblock %}

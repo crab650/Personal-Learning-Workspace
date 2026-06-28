@@ -81,6 +81,7 @@ def serialize_todo(todo):
     return {
         "id": todo.id,
         "title": todo.title,
+        "created_by_name": todo.created_by_name,
         "description": todo.description,
         "category": todo.category.name if todo.category else None,
         "category_id": todo.category_id,
@@ -386,6 +387,13 @@ def delete_note(note_id):
     note = get_user_note(note_id)
     if not note:
         return jsonify({"error": "note not found"}), 404
+    note_image_dir = (
+        Path(current_app.config["UPLOAD_FOLDER"])
+        / "note_images"
+        / f"user_{current_user.id}"
+    )
+    for image in list(note.images):
+        (note_image_dir / image.stored_name).unlink(missing_ok=True)
     db.session.delete(note)
     db.session.commit()
     return jsonify({"ok": True})
@@ -417,6 +425,7 @@ def list_todos():
 def create_todo():
     payload = request.get_json(silent=True) or {}
     todo = Todo(user_id=current_user.id)
+    todo.created_by_name = current_user.display_name
     error = apply_todo_payload(todo, payload, partial=False)
     if error:
         status = 404 if error in {"category not found", "project not found"} else 400
@@ -424,7 +433,11 @@ def create_todo():
 
     max_order = (
         db.session.query(db.func.max(Todo.sort_order))
-        .filter_by(user_id=current_user.id, status=todo.status)
+        .filter_by(
+            user_id=current_user.id,
+            project_id=todo.project_id,
+            status=todo.status,
+        )
         .scalar()
         or 0
     )
@@ -464,6 +477,11 @@ def delete_todo(todo_id):
     todo = get_user_todo(todo_id)
     if not todo:
         return jsonify({"error": "todo not found"}), 404
+    shared_root = Path(current_app.config["UPLOAD_FOLDER"]) / "shared_projects"
+    for image in list(todo.shared_images):
+        (shared_root / f"share_{image.project_share_id}" / image.stored_name).unlink(
+            missing_ok=True
+        )
     db.session.delete(todo)
     db.session.commit()
     return jsonify({"ok": True})
@@ -531,6 +549,16 @@ def delete_question(question_id):
     question = get_user_question(question_id)
     if not question:
         return jsonify({"error": "question not found"}), 404
+    image_dir = (
+        Path(current_app.config["UPLOAD_FOLDER"])
+        / "question_images"
+        / f"user_{current_user.id}"
+    )
+    try:
+        for image in list(question.images):
+            (image_dir / image.stored_name).unlink(missing_ok=True)
+    except PermissionError:
+        return jsonify({"error": "question image is in use"}), 409
     db.session.delete(question)
     db.session.commit()
     return jsonify({"ok": True})
@@ -701,6 +729,15 @@ def reorder_todos():
     items = payload.get("items", [])
     if not isinstance(items, list):
         return jsonify({"error": "items must be a list"}), 400
+    valid_statuses = {"Todo", "Doing", "Done", "Cancel"}
+    if any(
+        not isinstance(item, dict)
+        or ("status" in item and item.get("status") not in valid_statuses)
+        or not isinstance(item.get("sort_order"), int)
+        or item["sort_order"] < 1
+        for item in items
+    ):
+        return jsonify({"error": "invalid reorder item"}), 400
 
     ids = [item.get("id") for item in items if isinstance(item, dict) and item.get("id")]
     todos = Todo.query.filter(Todo.user_id == current_user.id, Todo.id.in_(ids)).all()
@@ -711,8 +748,8 @@ def reorder_todos():
         if not todo:
             continue
         todo.sort_order = item.get("sort_order", index + 1)
-        if item.get("status"):
-            todo.status = item["status"]
+        if item.get("status") and item["status"] != todo.status:
+            set_todo_status(todo, item["status"])
         todo.updated_at = utc_now()
 
     db.session.commit()

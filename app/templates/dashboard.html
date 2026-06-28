@@ -8,7 +8,7 @@
     <h1>Dashboard</h1>
     <p>總覽你的學習進度與待辦事項</p>
   </div>
-  <div class="today-text">2026年6月25日</div>
+  <div class="today-text">{{ today.strftime("%Y") }}年{{ today.strftime("%m") }}月{{ today.strftime("%d") }}日</div>
 </div>
 
 <div class="stat-grid">
@@ -22,8 +22,8 @@
   <div class="stat-card">
     <div class="stat-icon green">T</div>
     <div>
-      <div class="stat-value">{{ todos|selectattr('status', 'equalto', 'Done')|list|length }}</div>
-      <div class="stat-label">已完成待辦</div>
+      <div class="stat-value">{{ due_today_count }}</div>
+      <div class="stat-label">今日到期</div>
     </div>
   </div>
   <div class="stat-card">
@@ -77,24 +77,51 @@
   </section>
 
   <section class="panel tall">
-    <div class="panel-header">
-      <h2>今日待辦事項</h2>
-      <a href="{{ url_for('pages.todos') }}">查看全部</a>
+    <div class="panel-header dashboard-todo-header">
+      <div>
+        <h2>今日焦點</h2>
+        <small>
+          {% if overdue_count %}<span class="dashboard-overdue-count">{{ overdue_count }} 項逾期</span>{% endif %}
+          {{ todos|length }} 項待處理
+        </small>
+      </div>
+      <div class="dashboard-todo-links">
+        <a href="{{ url_for('pages.todos') }}">一般任務</a>
+        <a href="{{ url_for('pages.projects') }}">專案</a>
+      </div>
     </div>
-    <div id="todo-list">
+    <div id="dashboard-todo-list" class="dashboard-todo-list">
       {% for todo in todos %}
-        <div class="todo-item" draggable="true" data-id="{{ todo.id }}">
-          <input class="form-check-input" type="checkbox" {% if todo.status == "Done" %}checked{% endif %}>
-          <div class="todo-body">
-            <div class="row-title {% if todo.status == 'Done' %}done{% endif %}">{{ todo.title }}</div>
-            <div class="todo-meta">{{ todo.priority }} · {{ todo.status }}</div>
+        <article class="dashboard-todo-card {% if todo.due_date and todo.due_date < today %}is-overdue{% endif %}" data-id="{{ todo.id }}">
+          <button class="dashboard-todo-check" type="button" aria-label="完成「{{ todo.title }}」">✓</button>
+          <div class="dashboard-todo-content">
+            <a class="dashboard-todo-title" href="{{ url_for('pages.project_detail', project_id=todo.project_id) if todo.project_id else url_for('pages.todo_edit', todo_id=todo.id) }}">{{ todo.title }}</a>
+            <div class="dashboard-todo-meta">
+              <span class="dashboard-status status-{{ todo.status|lower }}">{{ "進行中" if todo.status == "Doing" else "待處理" }}</span>
+              {% if todo.project %}
+                <span class="dashboard-project">{{ todo.project.name }}</span>
+              {% else %}
+                <span>一般任務</span>
+              {% endif %}
+              {% if todo.due_date %}
+                <span class="dashboard-due {% if todo.due_date < today %}overdue{% elif todo.due_date == today %}today{% endif %}">
+                  {% if todo.due_date < today %}逾期 {% elif todo.due_date == today %}今天到期{% else %}截止 {% endif %}
+                  {% if todo.due_date != today %}{{ todo.due_date.strftime("%m/%d") }}{% endif %}
+                </span>
+              {% else %}
+                <span>未設定日期</span>
+              {% endif %}
+            </div>
           </div>
-        </div>
+        </article>
       {% else %}
-        <div class="empty-state">今日沒有待辦</div>
+        <div class="dashboard-todo-empty">
+          <strong>今天沒有待處理事項</strong>
+          <span>可以安排新的任務，或到專案看板查看進度。</span>
+        </div>
       {% endfor %}
     </div>
-    <a class="btn btn-primary btn-sm mt-3" href="{{ url_for('pages.todos') }}">新增待辦</a>
+    <a class="btn btn-primary btn-sm mt-3" href="{{ url_for('pages.todo_new') }}">新增一般待辦</a>
   </section>
 
   <section class="panel wide">
@@ -137,34 +164,26 @@
 
 {% block scripts %}
 <script>
-  const todoList = document.getElementById("todo-list");
-  let dragged = null;
-
-  if (todoList) {
-    todoList.addEventListener("dragstart", (event) => {
-      dragged = event.target.closest(".todo-item");
-    });
-
-    todoList.addEventListener("dragover", (event) => {
-      event.preventDefault();
-      const target = event.target.closest(".todo-item");
-      if (!target || target === dragged) return;
-      const box = target.getBoundingClientRect();
-      const after = event.clientY > box.top + box.height / 2;
-      todoList.insertBefore(dragged, after ? target.nextSibling : target);
-    });
-
-    todoList.addEventListener("drop", async () => {
-      const items = [...todoList.querySelectorAll(".todo-item")].map((item, index) => ({
-        id: Number(item.dataset.id),
-        sort_order: index + 1
-      }));
-      await fetch("{{ url_for('api.reorder_todos') }}", {
+  const dashboardTodoList = document.getElementById("dashboard-todo-list");
+  dashboardTodoList?.addEventListener("click", async (event) => {
+    const button = event.target.closest(".dashboard-todo-check");
+    if (!button) return;
+    const card = button.closest(".dashboard-todo-card");
+    button.disabled = true;
+    try {
+      const endpoint = "{{ url_for('api.update_todo_status', todo_id=0) }}".replace("/0/status", `/${card.dataset.id}/status`);
+      const response = await fetch(endpoint, {
         method: "PUT",
         headers: {"Content-Type": "application/json"},
-        body: JSON.stringify({items})
+        body: JSON.stringify({status: "Done"})
       });
-    });
-  }
+      if (!response.ok) throw new Error("update failed");
+      card.classList.add("is-completing");
+      window.setTimeout(() => card.remove(), 220);
+    } catch (error) {
+      button.disabled = false;
+      window.alert("待辦狀態更新失敗。");
+    }
+  });
 </script>
 {% endblock %}

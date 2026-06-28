@@ -8,15 +8,19 @@
     <h1>{{ title }}</h1>
     <p>設定任務狀態、優先順序、截止日期與提醒時間。</p>
   </div>
-  <a class="btn btn-outline-secondary" href="{{ url_for('pages.todos') }}">返回列表</a>
+  <a class="btn btn-outline-secondary" href="{{ return_to or url_for('pages.todos') }}">返回列表</a>
 </div>
 
 <form method="post">
+  {% if return_to %}
+    <input type="hidden" name="next" value="{{ return_to }}">
+  {% endif %}
   <section class="panel todo-form-panel">
     <div class="row g-3">
       <div class="col-lg-8">
         <label class="form-label">標題</label>
-        <input class="form-control" name="title" value="{{ todo.title if todo else '' }}" required>
+        <textarea id="todo-title-input" class="form-control todo-title-input" name="title" maxlength="500" rows="2" required>{{ todo.title if todo else '' }}</textarea>
+        <small class="text-secondary">Enter 儲存，Shift + Enter 換行</small>
       </div>
       <div class="col-lg-4">
         <label class="form-label">分類</label>
@@ -34,7 +38,7 @@
         <select class="form-select" name="project_id">
           <option value="">未指定專案</option>
           {% for project in projects %}
-            <option value="{{ project.id }}" {% if todo and todo.project_id == project.id %}selected{% endif %}>
+            <option value="{{ project.id }}" {% if (todo and todo.project_id == project.id) or (not todo and selected_project_id == project.id) %}selected{% endif %}>
               {{ project.name }}
             </option>
           {% endfor %}
@@ -80,7 +84,7 @@
 
   <div class="form-actions">
     <button class="btn btn-primary">儲存</button>
-    <a class="btn btn-outline-secondary" href="{{ url_for('pages.todos') }}">取消</a>
+    <a class="btn btn-outline-secondary" href="{{ return_to or url_for('pages.todos') }}">取消</a>
   </div>
 </form>
 {% endblock %}
@@ -99,6 +103,22 @@
   if (todoDescriptionInput && todoDescriptionPreview) {
     todoDescriptionInput.addEventListener("input", renderTodoDescription);
     renderTodoDescription();
+  }
+
+  const todoTitleInput = document.getElementById("todo-title-input");
+  if (todoTitleInput) {
+    const resizeTitle = () => {
+      todoTitleInput.style.height = "auto";
+      todoTitleInput.style.height = `${todoTitleInput.scrollHeight}px`;
+    };
+    todoTitleInput.addEventListener("input", resizeTitle);
+    todoTitleInput.addEventListener("keydown", (event) => {
+      if (event.key === "Enter" && !event.shiftKey) {
+        event.preventDefault();
+        todoTitleInput.form.requestSubmit();
+      }
+    });
+    resizeTitle();
   }
 </script>
 {% endblock %}

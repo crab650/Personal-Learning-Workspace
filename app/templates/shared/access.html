@@ -1,0 +1,35 @@
+{% extends "base.html" %}
+
+{% block title %}加入 {{ project.name }}{% endblock %}
+
+{% block public_content %}
+<main class="shared-access-page">
+  <section class="shared-access-card">
+    <div class="shared-project-mark">PL</div>
+    <p class="shared-eyebrow">共享專案看板</p>
+    <h1>{{ project.name }}</h1>
+    {% if project.description %}
+      <p class="text-secondary">{{ project.description }}</p>
+    {% endif %}
+
+    {% if error %}
+      <div class="alert alert-danger">{{ error }}</div>
+    {% endif %}
+
+    <form method="post">
+      <div>
+        <label class="form-label">你的暱稱</label>
+        <input class="form-control" name="nickname" maxlength="80" required autofocus {% if locked %}disabled{% endif %}>
+      </div>
+      {% if share.has_password %}
+        <div>
+          <label class="form-label">分享密碼</label>
+          <input class="form-control" type="password" name="password" required {% if locked %}disabled{% endif %}>
+        </div>
+      {% endif %}
+      <button class="btn btn-primary" {% if locked %}disabled{% endif %}>進入協作看板</button>
+    </form>
+    <small>你的操作會以暱稱記錄。此頁面不需要系統帳號。</small>
+  </section>
+</main>
+{% endblock %}

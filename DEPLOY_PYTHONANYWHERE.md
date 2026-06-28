@@ -121,6 +121,17 @@ python -m flask upgrade-db
 python -m flask seed
 ```
 
+既有站台更新程式後也要再次執行：
+
+```bash
+export FLASK_APP=run.py
+python -m flask upgrade-db
+```
+
+這會保留既有資料，並建立專案分享、操作紀錄與圖片附件需要的資料表及欄位。
+分享圖片、筆記圖片與問題圖片另外存放在 `uploads/shared_projects/`、`uploads/note_images/`、`uploads/question_images/`，
+搬移或備份站台時必須一併保留。
+
 ## Static files
 
 PythonAnywhere Web 設定建議：

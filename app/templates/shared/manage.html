@@ -1,0 +1,107 @@
+{% extends "base.html" %}
+
+{% block title %}分享 {{ project.name }} - Personal Learning & Workspace{% endblock %}
+
+{% block content %}
+<div class="page-heading">
+  <div>
+    <h1>分享專案</h1>
+    <p>{{ project.name }} · 免登入協作看板</p>
+  </div>
+  <a class="btn btn-outline-secondary" href="{{ url_for('pages.project_detail', project_id=project.id) }}">返回專案</a>
+</div>
+
+{% if error %}
+  <div class="alert alert-danger">{{ error }}</div>
+{% endif %}
+
+<section class="panel share-settings-panel">
+  <div class="panel-header">
+    <h2>分享設定</h2>
+    {% if share %}
+      <span class="status-pill {{ 'success-pill' if share.is_active else 'neutral-pill' }}">
+        {{ "啟用中" if share.is_active else "已停用" }}
+      </span>
+    {% endif %}
+  </div>
+
+  {% if share_url %}
+    <label class="form-label">分享連結</label>
+    <div class="share-link-row">
+      <input id="share-url" class="form-control" value="{{ share_url }}" readonly>
+      <button id="copy-share-url" class="btn btn-outline-primary" type="button">複製</button>
+      <a class="btn btn-outline-secondary" href="{{ share_url }}" target="_blank" rel="noopener">開啟</a>
+    </div>
+  {% else %}
+    <p class="text-secondary">儲存設定後會建立一組不可猜測的分享連結。</p>
+  {% endif %}
+
+  <form method="post" class="share-settings-form">
+    <input type="hidden" name="action" value="save">
+    <label class="form-check">
+      <input class="form-check-input" type="checkbox" name="is_active" {% if not share or share.is_active %}checked{% endif %}>
+      <span class="form-check-label">啟用分享</span>
+    </label>
+
+    <div>
+      <label class="form-label">分享密碼（選填）</label>
+      <input class="form-control" type="password" name="password" autocomplete="new-password" placeholder="{{ '留空表示保留目前密碼' if share and share.has_password else '不填則不需要密碼' }}">
+    </div>
+
+    {% if share and share.has_password %}
+      <label class="form-check">
+        <input class="form-check-input" type="checkbox" name="remove_password">
+        <span class="form-check-label">移除目前密碼</span>
+      </label>
+    {% endif %}
+
+    <div>
+      <label class="form-label">到期日（選填，當日結束後失效）</label>
+      <input class="form-control" type="date" name="expires_on" value="{{ share.expires_on.isoformat() if share and share.expires_on else '' }}">
+    </div>
+
+    <button class="btn btn-primary">儲存分享設定</button>
+  </form>
+
+  {% if share %}
+    <form method="post" class="share-regenerate-form">
+      <input type="hidden" name="action" value="regenerate">
+      <button class="btn btn-outline-danger" onclick="return confirm('重新產生後，舊分享連結會立即失效。確定繼續？')">重新產生分享連結</button>
+    </form>
+  {% endif %}
+</section>
+
+<section class="panel share-audit-panel">
+  <div class="panel-header">
+    <h2>最近操作紀錄</h2>
+    <span>{{ audit_logs|length }}</span>
+  </div>
+  {% for log in audit_logs %}
+    <div class="share-audit-row">
+      <div>
+        <strong>{{ log.actor_name }}</strong>
+        <span>{{ {"create": "新增待辦", "edit": "編輯待辦", "status": "變更狀態", "reorder": "調整看板", "image_upload": "上傳圖片", "image_remove": "移除圖片"}[log.action] if log.action in ["create", "edit", "status", "reorder", "image_upload", "image_remove"] else log.action }}</span>
+      </div>
+      <time>{{ log.created_at.strftime("%Y-%m-%d %H:%M") }}</time>
+    </div>
+  {% else %}
+    <div class="empty-state">尚無外部協作紀錄。</div>
+  {% endfor %}
+</section>
+{% endblock %}
+
+{% block scripts %}
+  {{ super() }}
+  <script>
+    document.getElementById("copy-share-url")?.addEventListener("click", async (event) => {
+      const input = document.getElementById("share-url");
+      try {
+        await navigator.clipboard.writeText(input.value);
+        event.currentTarget.textContent = "已複製";
+      } catch (error) {
+        input.select();
+        document.execCommand("copy");
+      }
+    });
+  </script>
+{% endblock %}

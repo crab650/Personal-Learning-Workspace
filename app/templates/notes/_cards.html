@@ -1,0 +1,24 @@
+{% for note in notes %}
+  <article class="note-card">
+    <div class="note-card-top">
+      <span class="tag-badge">{{ note.category.name if note.category else "Note" }}</span>
+      {% if note.is_favorite %}
+        <span class="favorite-mark">收藏</span>
+      {% endif %}
+    </div>
+    <h2><a href="{{ url_for('pages.note_detail', note_id=note.id, next=return_to) }}">{{ note.title }}</a></h2>
+    <p>{{ note.markdown_content|striptags|truncate(120) }}</p>
+    <div class="note-tags">
+      {% for tag in note.tags %}
+        <span>{{ tag.name }}</span>
+      {% endfor %}
+    </div>
+    <div class="note-card-footer">
+      <span>{{ note.updated_at.strftime("%Y-%m-%d") }}</span>
+      <span class="inline-actions">
+        <a href="{{ url_for('pages.note_detail', note_id=note.id, next=return_to) }}">閱讀</a>
+        <a href="{{ url_for('pages.note_edit', note_id=note.id, next=return_to) }}">編輯</a>
+      </span>
+    </div>
+  </article>
+{% endfor %}
