@@ -68,10 +68,15 @@
 ├── requirements.txt
 ├── start_app.bat            # Windows 一鍵啟動
 ├── DEPLOY_PYTHONANYWHERE.md
+├── project_architecture.md  # 專案程式架構、資料庫結構與 API 通訊說明
 └── README.md
 ```
 
+更詳細的模組設計、SQLite 資料表欄位結構（包含 Mermaid 關係圖）與 API 通訊格式規格，請參考：
+- [project_architecture.md](project_architecture.md)
+
 ## 本機啟動
+
 
 ### 1. 建立並啟用虛擬環境
 
