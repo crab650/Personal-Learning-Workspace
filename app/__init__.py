@@ -25,10 +25,12 @@ def create_app():
     from app.routes.auth import auth_bp
     from app.routes.pages import pages_bp
     from app.routes.api import api_bp
+    from app.routes.shared import shared_bp
 
     app.register_blueprint(auth_bp)
     app.register_blueprint(pages_bp)
     app.register_blueprint(api_bp, url_prefix="/api")
+    app.register_blueprint(shared_bp)
 
     from app.cli import register_commands
 

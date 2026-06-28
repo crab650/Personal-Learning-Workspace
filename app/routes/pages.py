@@ -1,12 +1,13 @@
 import markdown
 import uuid
-from datetime import datetime
+from datetime import date, datetime, timedelta
 from pathlib import Path
 
 from flask import (
     Blueprint,
     abort,
     current_app,
+    jsonify,
     redirect,
     render_template,
     request,
@@ -18,7 +19,20 @@ from sqlalchemy import or_
 from werkzeug.utils import secure_filename
 
 from app import db
-from app.models import Category, Note, Project, Question, StoredFile, Tag, Todo, User, utc_now
+from app.image_utils import compress_image_to_webp
+from app.models import (
+    Category,
+    Note,
+    NoteImage,
+    Project,
+    Question,
+    QuestionImage,
+    StoredFile,
+    Tag,
+    Todo,
+    User,
+    utc_now,
+)
 
 
 pages_bp = Blueprint("pages", __name__)
@@ -33,12 +47,39 @@ def index():
 @login_required
 def dashboard():
     user_id = current_user.id
+    today = datetime.now().date()
+    active_todos = (
+        Todo.query.filter(
+            Todo.user_id == user_id,
+            Todo.status.in_(["Todo", "Doing"]),
+        )
+        .order_by(Todo.sort_order.asc(), Todo.created_at.desc())
+        .all()
+    )
+    active_todos.sort(
+        key=lambda todo: (
+            0
+            if todo.due_date and todo.due_date < today
+            else 1
+            if todo.due_date == today
+            else 2
+            if todo.status == "Doing"
+            else 3,
+            todo.due_date or date.max,
+            todo.sort_order,
+        )
+    )
     return render_template(
         "dashboard.html",
         active_page="dashboard",
+        today=today,
         notes=Note.query.filter_by(user_id=user_id).order_by(Note.updated_at.desc()).limit(5).all(),
         questions=Question.query.filter_by(user_id=user_id).order_by(Question.updated_at.desc()).limit(5).all(),
-        todos=Todo.query.filter_by(user_id=user_id).order_by(Todo.sort_order.asc(), Todo.created_at.desc()).limit(6).all(),
+        todos=active_todos[:8],
+        overdue_count=sum(
+            1 for todo in active_todos if todo.due_date and todo.due_date < today
+        ),
+        due_today_count=sum(1 for todo in active_todos if todo.due_date == today),
         files=StoredFile.query.filter_by(user_id=user_id).order_by(StoredFile.updated_at.desc()).limit(5).all(),
     )
 
@@ -48,6 +89,7 @@ def dashboard():
 def notes():
     q = request.args.get("q", "").strip()
     category_id = request.args.get("category_id", type=int)
+    page = max(request.args.get("page", 1, type=int), 1)
     query = Note.query.filter_by(user_id=current_user.id)
 
     if q:
@@ -63,15 +105,38 @@ def notes():
         query = query.filter_by(category_id=category_id)
 
     categories = Category.query.filter_by(user_id=current_user.id).order_by(Category.name).all()
-    notes = query.order_by(Note.updated_at.desc()).all()
+    pagination = query.order_by(Note.updated_at.desc(), Note.id.desc()).paginate(
+        page=page,
+        per_page=20,
+        error_out=False,
+    )
+    return_to = url_for(
+        "pages.notes",
+        q=q or None,
+        category_id=category_id,
+    )
+    if request.args.get("partial") == "1":
+        return jsonify(
+            {
+                "html": render_template(
+                    "notes/_cards.html",
+                    notes=pagination.items,
+                    return_to=return_to,
+                ),
+                "has_more": pagination.has_next,
+                "next_page": pagination.next_num,
+            }
+        )
     return render_template(
         "notes/list.html",
         title="學習筆記",
         active_page="notes",
-        notes=notes,
+        notes=pagination.items,
+        pagination=pagination,
         categories=categories,
         selected_category_id=category_id,
         q=q,
+        return_to=return_to,
     )
 
 
@@ -83,9 +148,18 @@ def note_new():
         note = Note(user_id=current_user.id)
         _populate_note_from_form(note)
         db.session.add(note)
+        db.session.flush()
+        upload_session = request.form.get("upload_session", "").strip()
+        if upload_session:
+            NoteImage.query.filter_by(
+                user_id=current_user.id,
+                note_id=None,
+                upload_session=upload_session,
+            ).update({"note_id": note.id, "upload_session": None})
         db.session.commit()
         return redirect(url_for("pages.note_detail", note_id=note.id))
 
+    _cleanup_staged_note_images()
     return render_template(
         "notes/form.html",
         title="新增筆記",
@@ -93,6 +167,7 @@ def note_new():
         note=None,
         categories=categories,
         tag_text="",
+        upload_session=uuid.uuid4().hex,
     )
 
 
@@ -101,12 +176,14 @@ def note_new():
 def note_detail(note_id):
     note = _get_user_note(note_id)
     rendered_html = _render_markdown(note.markdown_content)
+    return_to = _safe_next_url(request.args.get("next", ""), url_for("pages.notes"))
     return render_template(
         "notes/detail.html",
         title=note.title,
         active_page="notes",
         note=note,
         rendered_html=rendered_html,
+        return_to=return_to,
     )
 
 
@@ -115,10 +192,11 @@ def note_detail(note_id):
 def note_edit(note_id):
     note = _get_user_note(note_id)
     categories = Category.query.filter_by(user_id=current_user.id).order_by(Category.name).all()
+    return_to = _safe_next_url(request.values.get("next", ""), url_for("pages.notes"))
     if request.method == "POST":
         _populate_note_from_form(note)
         db.session.commit()
-        return redirect(url_for("pages.note_detail", note_id=note.id))
+        return redirect(url_for("pages.note_detail", note_id=note.id, next=return_to))
 
     return render_template(
         "notes/form.html",
@@ -127,6 +205,8 @@ def note_edit(note_id):
         note=note,
         categories=categories,
         tag_text=", ".join(tag.name for tag in note.tags),
+        return_to=return_to,
+        upload_session="",
     )
 
 
@@ -134,45 +214,135 @@ def note_edit(note_id):
 @login_required
 def note_delete(note_id):
     note = _get_user_note(note_id)
+    _remove_note_image_files(note.images)
     db.session.delete(note)
     db.session.commit()
     return redirect(url_for("pages.notes"))
 
 
+@pages_bp.post("/notes/images/upload")
+@login_required
+def note_image_upload():
+    _cleanup_staged_note_images()
+    note_id = request.form.get("note_id", type=int)
+    upload_session = request.form.get("upload_session", "").strip()[:64]
+    note = _get_user_note(note_id) if note_id else None
+    if not note and not upload_session:
+        return jsonify({"error": "missing note or upload session"}), 400
+
+    image_query = NoteImage.query.filter_by(user_id=current_user.id)
+    if note:
+        image_query = image_query.filter_by(note_id=note.id)
+    else:
+        image_query = image_query.filter_by(note_id=None, upload_session=upload_session)
+    if image_query.count() >= current_app.config["NOTE_IMAGE_MAX_PER_NOTE"]:
+        return jsonify({"error": "每篇筆記最多 5 張圖片"}), 400
+
+    upload = request.files.get("image")
+    if not upload or not upload.filename:
+        return jsonify({"error": "請選擇圖片"}), 400
+    try:
+        image_bytes, width, height = compress_image_to_webp(
+            upload,
+            max_source_bytes=current_app.config["NOTE_IMAGE_MAX_SOURCE_BYTES"],
+            max_file_bytes=current_app.config["NOTE_IMAGE_MAX_FILE_BYTES"],
+        )
+    except ValueError as exc:
+        return jsonify({"error": str(exc)}), 400
+
+    used_bytes = (
+        db.session.query(db.func.sum(NoteImage.size_bytes))
+        .filter_by(user_id=current_user.id)
+        .scalar()
+        or 0
+    )
+    if used_bytes + len(image_bytes) > current_app.config["NOTE_IMAGE_USER_QUOTA_BYTES"]:
+        return jsonify({"error": "筆記圖片容量已達 50MB"}), 400
+
+    stored_name = f"{uuid.uuid4().hex}.webp"
+    image_dir = _note_image_dir()
+    image_dir.mkdir(parents=True, exist_ok=True)
+    image_path = image_dir / stored_name
+    image_path.write_bytes(image_bytes)
+    image = NoteImage(
+        user_id=current_user.id,
+        note_id=note.id if note else None,
+        upload_session=None if note else upload_session,
+        stored_name=stored_name,
+        size_bytes=len(image_bytes),
+        width=width,
+        height=height,
+    )
+    db.session.add(image)
+    try:
+        db.session.commit()
+    except Exception:
+        image_path.unlink(missing_ok=True)
+        raise
+    return jsonify(_serialize_note_image(image)), 201
+
+
+@pages_bp.get("/notes/images/<int:image_id>")
+@login_required
+def note_image_file(image_id):
+    image = NoteImage.query.filter_by(id=image_id, user_id=current_user.id).first()
+    if not image:
+        abort(404)
+    return send_from_directory(
+        _note_image_dir(),
+        image.stored_name,
+        mimetype="image/webp",
+        max_age=86400,
+    )
+
+
+@pages_bp.delete("/notes/images/<int:image_id>")
+@login_required
+def note_image_delete(image_id):
+    image = NoteImage.query.filter_by(id=image_id, user_id=current_user.id).first()
+    if not image:
+        return jsonify({"error": "image not found"}), 404
+    image_path = _note_image_dir() / image.stored_name
+    try:
+        image_path.unlink(missing_ok=True)
+    except PermissionError:
+        return jsonify({"error": "圖片正在使用中，請稍後再試"}), 409
+    db.session.delete(image)
+    db.session.commit()
+    return jsonify({"ok": True})
+
+
 @pages_bp.route("/todos")
 @login_required
 def todos():
-    q = request.args.get("q", "").strip()
-    status = request.args.get("status", "").strip()
-    priority = request.args.get("priority", "").strip()
-    category_id = request.args.get("category_id", type=int)
-    project_id = request.args.get("project_id", type=int)
-    group_by = request.args.get("group_by", "status")
-    if group_by not in {"status", "category", "project"}:
-        group_by = "status"
-    query = Todo.query.filter_by(user_id=current_user.id)
-
-    if q:
-        like = f"%{q}%"
-        query = query.filter(or_(Todo.title.ilike(like), Todo.description.ilike(like)))
-    if status:
-        query = query.filter_by(status=status)
-    if priority:
-        query = query.filter_by(priority=priority)
-    if category_id:
-        query = query.filter_by(category_id=category_id)
-    if project_id:
-        query = query.filter_by(project_id=project_id)
-
     categories = Category.query.filter_by(user_id=current_user.id).order_by(Category.name).all()
-    projects = Project.query.filter_by(user_id=current_user.id).order_by(Project.name).all()
-    todos = query.order_by(Todo.status.asc(), Todo.sort_order.asc(), Todo.created_at.desc()).all()
-    groups = _todo_groups(todos, group_by, categories, projects)
-    rendered_descriptions = {
-        todo.id: _render_markdown(todo.description)
-        for todo in todos
-        if todo.description
-    }
+    completed_cutoff = utc_now() - timedelta(days=2)
+    todos = (
+        Todo.query.filter(
+            Todo.user_id == current_user.id,
+            Todo.project_id.is_(None),
+            or_(
+                Todo.status != "Done",
+                Todo.completed_at >= completed_cutoff,
+            ),
+        )
+        .order_by(Todo.status.asc(), Todo.sort_order.asc(), Todo.created_at.desc())
+        .all()
+    )
+    status_columns = [
+        ("Todo", "待處理"),
+        ("Doing", "進行中"),
+        ("Done", "已完成"),
+        ("Cancel", "已取消"),
+    ]
+    groups = [
+        {
+            "status": status,
+            "title": title,
+            "todos": [todo for todo in todos if todo.status == status],
+        }
+        for status, title in status_columns
+    ]
     return render_template(
         "todos/list.html",
         title="待辦事項",
@@ -180,16 +350,7 @@ def todos():
         todos=todos,
         groups=groups,
         categories=categories,
-        projects=projects,
-        selected_status=status,
-        selected_priority=priority,
-        selected_category_id=category_id,
-        selected_project_id=project_id,
-        group_by=group_by,
-        q=q,
-        statuses=["Todo", "Doing", "Done", "Cancel"],
-        priorities=["High", "Medium", "Low"],
-        rendered_descriptions=rendered_descriptions,
+        project=None,
     )
 
 
@@ -198,19 +359,26 @@ def todos():
 def todo_new():
     categories = Category.query.filter_by(user_id=current_user.id).order_by(Category.name).all()
     projects = Project.query.filter_by(user_id=current_user.id).order_by(Project.name).all()
+    selected_project_id = request.args.get("project_id", type=int)
+    return_to = request.values.get("next", "")
     if request.method == "POST":
         todo = Todo(user_id=current_user.id)
+        todo.created_by_name = current_user.display_name
         _populate_todo_from_form(todo)
         max_order = (
             db.session.query(db.func.max(Todo.sort_order))
-            .filter_by(user_id=current_user.id, status=todo.status)
+            .filter_by(
+                user_id=current_user.id,
+                project_id=todo.project_id,
+                status=todo.status,
+            )
             .scalar()
             or 0
         )
         todo.sort_order = max_order + 1
         db.session.add(todo)
         db.session.commit()
-        return redirect(url_for("pages.todos"))
+        return redirect(_safe_next_url(return_to, url_for("pages.todos")))
 
     return render_template(
         "todos/form.html",
@@ -221,6 +389,8 @@ def todo_new():
         projects=projects,
         statuses=["Todo", "Doing", "Done", "Cancel"],
         priorities=["High", "Medium", "Low"],
+        selected_project_id=selected_project_id,
+        return_to=return_to,
     )
 
 
@@ -230,10 +400,11 @@ def todo_edit(todo_id):
     todo = _get_user_todo(todo_id)
     categories = Category.query.filter_by(user_id=current_user.id).order_by(Category.name).all()
     projects = Project.query.filter_by(user_id=current_user.id).order_by(Project.name).all()
+    return_to = request.values.get("next", "")
     if request.method == "POST":
         _populate_todo_from_form(todo)
         db.session.commit()
-        return redirect(url_for("pages.todos"))
+        return redirect(_safe_next_url(return_to, url_for("pages.todos")))
 
     return render_template(
         "todos/form.html",
@@ -244,6 +415,8 @@ def todo_edit(todo_id):
         projects=projects,
         statuses=["Todo", "Doing", "Done", "Cancel"],
         priorities=["High", "Medium", "Low"],
+        selected_project_id=None,
+        return_to=return_to,
     )
 
 
@@ -251,6 +424,7 @@ def todo_edit(todo_id):
 @login_required
 def todo_delete(todo_id):
     todo = _get_user_todo(todo_id)
+    _remove_shared_image_files(todo.shared_images)
     db.session.delete(todo)
     db.session.commit()
     return redirect(url_for("pages.todos"))
@@ -328,18 +502,28 @@ def project_detail(project_id):
         .order_by(Todo.status.asc(), Todo.sort_order.asc(), Todo.updated_at.desc())
         .all()
     )
-    rendered_descriptions = {
-        todo.id: _render_markdown(todo.description)
-        for todo in todos
-        if todo.description
-    }
+    categories = Category.query.filter_by(user_id=current_user.id).order_by(Category.name).all()
+    groups = [
+        {
+            "status": status,
+            "title": title,
+            "todos": [todo for todo in todos if todo.status == status],
+        }
+        for status, title in [
+            ("Todo", "待處理"),
+            ("Doing", "進行中"),
+            ("Done", "已完成"),
+            ("Cancel", "已取消"),
+        ]
+    ]
     return render_template(
-        "projects/detail.html",
+        "todos/list.html",
         title=project.name,
         active_page="projects",
         project=project,
         todos=todos,
-        rendered_descriptions=rendered_descriptions,
+        groups=groups,
+        categories=categories,
     )
 
 
@@ -368,6 +552,8 @@ def project_edit(project_id):
 @login_required
 def project_delete(project_id):
     project = _get_user_project(project_id)
+    if project.share:
+        _remove_shared_image_files(project.share.images)
     Todo.query.filter_by(user_id=current_user.id, project_id=project.id).update({"project_id": None})
     db.session.delete(project)
     db.session.commit()
@@ -382,6 +568,7 @@ def questions():
     category_id = request.args.get("category_id", type=int)
     understood = request.args.get("understood", "").strip()
     completed = request.args.get("completed", "").strip()
+    page = max(request.args.get("page", 1, type=int), 1)
     query = Question.query.filter_by(user_id=current_user.id)
 
     if q:
@@ -397,17 +584,43 @@ def questions():
         query = query.filter_by(is_completed=(completed == "yes"))
 
     categories = Category.query.filter_by(user_id=current_user.id).order_by(Category.name).all()
-    questions = query.order_by(Question.updated_at.desc()).all()
+    pagination = query.order_by(Question.updated_at.desc(), Question.id.desc()).paginate(
+        page=page,
+        per_page=20,
+        error_out=False,
+    )
     rendered_answers = {
         question.id: _render_markdown(question.gpt_answer)
-        for question in questions
+        for question in pagination.items
         if question.gpt_answer
     }
+    return_to = url_for(
+        "pages.questions",
+        q=q or None,
+        status=status or None,
+        category_id=category_id,
+        understood=understood or None,
+        completed=completed or None,
+    )
+    if request.args.get("partial") == "1":
+        return jsonify(
+            {
+                "html": render_template(
+                    "questions/_cards.html",
+                    questions=pagination.items,
+                    rendered_answers=rendered_answers,
+                    return_to=return_to,
+                ),
+                "has_more": pagination.has_next,
+                "next_page": pagination.next_num,
+            }
+        )
     return render_template(
         "questions/list.html",
         title="問題池",
         active_page="questions",
-        questions=questions,
+        questions=pagination.items,
+        pagination=pagination,
         categories=categories,
         q=q,
         selected_status=status,
@@ -416,6 +629,7 @@ def questions():
         selected_completed=completed,
         statuses=["Open", "Reviewing", "Answered", "Closed"],
         rendered_answers=rendered_answers,
+        return_to=return_to,
     )
 
 
@@ -427,9 +641,18 @@ def question_new():
         question = Question(user_id=current_user.id)
         _populate_question_from_form(question)
         db.session.add(question)
+        db.session.flush()
+        upload_session = request.form.get("upload_session", "").strip()
+        if upload_session:
+            QuestionImage.query.filter_by(
+                user_id=current_user.id,
+                question_id=None,
+                upload_session=upload_session,
+            ).update({"question_id": question.id, "upload_session": None})
         db.session.commit()
         return redirect(url_for("pages.question_detail", question_id=question.id))
 
+    _cleanup_staged_question_images()
     return render_template(
         "questions/form.html",
         title="新增問題",
@@ -437,6 +660,7 @@ def question_new():
         question_item=None,
         categories=categories,
         statuses=["Open", "Reviewing", "Answered", "Closed"],
+        upload_session=uuid.uuid4().hex,
     )
 
 
@@ -445,12 +669,14 @@ def question_new():
 def question_detail(question_id):
     question = _get_user_question(question_id)
     rendered_answer = _render_markdown(question.gpt_answer)
+    return_to = _safe_next_url(request.args.get("next", ""), url_for("pages.questions"))
     return render_template(
         "questions/detail.html",
         title="問題閱讀",
         active_page="questions",
         question_item=question,
         rendered_answer=rendered_answer,
+        return_to=return_to,
     )
 
 
@@ -459,10 +685,13 @@ def question_detail(question_id):
 def question_edit(question_id):
     question = _get_user_question(question_id)
     categories = Category.query.filter_by(user_id=current_user.id).order_by(Category.name).all()
+    return_to = _safe_next_url(request.values.get("next", ""), url_for("pages.questions"))
     if request.method == "POST":
         _populate_question_from_form(question)
         db.session.commit()
-        return redirect(url_for("pages.question_detail", question_id=question.id))
+        return redirect(
+            url_for("pages.question_detail", question_id=question.id, next=return_to)
+        )
 
     return render_template(
         "questions/form.html",
@@ -471,6 +700,8 @@ def question_edit(question_id):
         question_item=question,
         categories=categories,
         statuses=["Open", "Reviewing", "Answered", "Closed"],
+        return_to=return_to,
+        upload_session="",
     )
 
 
@@ -478,9 +709,114 @@ def question_edit(question_id):
 @login_required
 def question_delete(question_id):
     question = _get_user_question(question_id)
+    try:
+        _remove_question_image_files(question.images)
+    except PermissionError:
+        abort(409, description="圖片正在使用中，請稍後再刪除問題")
     db.session.delete(question)
     db.session.commit()
     return redirect(url_for("pages.questions"))
+
+
+@pages_bp.post("/questions/images/upload")
+@login_required
+def question_image_upload():
+    _cleanup_staged_question_images()
+    question_id = request.form.get("question_id", type=int)
+    upload_session = request.form.get("upload_session", "").strip()[:64]
+    question = _get_user_question(question_id) if question_id else None
+    if not question and not upload_session:
+        return jsonify({"error": "missing question or upload session"}), 400
+
+    image_query = QuestionImage.query.filter_by(user_id=current_user.id)
+    if question:
+        image_query = image_query.filter_by(question_id=question.id)
+    else:
+        image_query = image_query.filter_by(
+            question_id=None,
+            upload_session=upload_session,
+        )
+    if image_query.count() >= current_app.config["QUESTION_IMAGE_MAX_PER_QUESTION"]:
+        return jsonify({"error": "每個問題最多 5 張圖片"}), 400
+
+    upload = request.files.get("image")
+    if not upload or not upload.filename:
+        return jsonify({"error": "請選擇圖片"}), 400
+    try:
+        image_bytes, width, height = compress_image_to_webp(
+            upload,
+            max_source_bytes=current_app.config["QUESTION_IMAGE_MAX_SOURCE_BYTES"],
+            max_file_bytes=current_app.config["QUESTION_IMAGE_MAX_FILE_BYTES"],
+        )
+    except ValueError as exc:
+        return jsonify({"error": str(exc)}), 400
+
+    used_bytes = (
+        db.session.query(db.func.sum(QuestionImage.size_bytes))
+        .filter_by(user_id=current_user.id)
+        .scalar()
+        or 0
+    )
+    if used_bytes + len(image_bytes) > current_app.config["QUESTION_IMAGE_USER_QUOTA_BYTES"]:
+        return jsonify({"error": "問題圖片容量已達 50MB"}), 400
+
+    stored_name = f"{uuid.uuid4().hex}.webp"
+    image_dir = _question_image_dir()
+    image_dir.mkdir(parents=True, exist_ok=True)
+    image_path = image_dir / stored_name
+    image_path.write_bytes(image_bytes)
+    image = QuestionImage(
+        user_id=current_user.id,
+        question_id=question.id if question else None,
+        upload_session=None if question else upload_session,
+        stored_name=stored_name,
+        size_bytes=len(image_bytes),
+        width=width,
+        height=height,
+    )
+    db.session.add(image)
+    try:
+        db.session.commit()
+    except Exception:
+        image_path.unlink(missing_ok=True)
+        raise
+    return jsonify(_serialize_question_image(image)), 201
+
+
+@pages_bp.get("/questions/images/<int:image_id>")
+@login_required
+def question_image_file(image_id):
+    image = QuestionImage.query.filter_by(
+        id=image_id,
+        user_id=current_user.id,
+    ).first()
+    if not image:
+        abort(404)
+    return send_from_directory(
+        _question_image_dir(),
+        image.stored_name,
+        mimetype="image/webp",
+        max_age=86400,
+    )
+
+
+@pages_bp.delete("/questions/images/<int:image_id>")
+@login_required
+def question_image_delete(image_id):
+    image = QuestionImage.query.filter_by(
+        id=image_id,
+        user_id=current_user.id,
+    ).first()
+    if not image:
+        return jsonify({"error": "image not found"}), 404
+    image_path = _question_image_dir() / image.stored_name
+    try:
+        image_path.unlink(missing_ok=True)
+    except PermissionError:
+        return jsonify({"error": "圖片正在使用中，請稍後再試"}), 409
+    db.session.delete(image)
+    db.session.commit()
+    return jsonify({"ok": True})
 
 
 @pages_bp.route("/questions/<int:question_id>/toggle", methods=["POST"])
@@ -825,6 +1161,99 @@ def _user_upload_dir():
     return Path(current_app.config["UPLOAD_FOLDER"]) / f"user_{current_user.id}"
 
 
+def _note_image_dir():
+    return (
+        Path(current_app.config["UPLOAD_FOLDER"])
+        / "note_images"
+        / f"user_{current_user.id}"
+    )
+
+
+def _serialize_note_image(image):
+    return {
+        "id": image.id,
+        "url": url_for("pages.note_image_file", image_id=image.id),
+        "width": image.width,
+        "height": image.height,
+        "size_bytes": image.size_bytes,
+    }
+
+
+def _remove_note_image_files(images):
+    image_dir = _note_image_dir()
+    for image in list(images):
+        (image_dir / image.stored_name).unlink(missing_ok=True)
+
+
+def _cleanup_staged_note_images():
+    cutoff = utc_now() - timedelta(days=1)
+    stale_images = NoteImage.query.filter(
+        NoteImage.user_id == current_user.id,
+        NoteImage.note_id.is_(None),
+        NoteImage.created_at < cutoff,
+    ).all()
+    if not stale_images:
+        return
+    _remove_note_image_files(stale_images)
+    for image in stale_images:
+        db.session.delete(image)
+    db.session.commit()
+
+
+def _question_image_dir():
+    return (
+        Path(current_app.config["UPLOAD_FOLDER"])
+        / "question_images"
+        / f"user_{current_user.id}"
+    )
+
+
+def _serialize_question_image(image):
+    return {
+        "id": image.id,
+        "url": url_for("pages.question_image_file", image_id=image.id),
+        "width": image.width,
+        "height": image.height,
+        "size_bytes": image.size_bytes,
+    }
+
+
+def _remove_question_image_files(images):
+    image_dir = _question_image_dir()
+    for image in list(images):
+        (image_dir / image.stored_name).unlink(missing_ok=True)
+
+
+def _cleanup_staged_question_images():
+    cutoff = utc_now() - timedelta(days=1)
+    stale_images = QuestionImage.query.filter(
+        QuestionImage.user_id == current_user.id,
+        QuestionImage.question_id.is_(None),
+        QuestionImage.created_at < cutoff,
+    ).all()
+    if not stale_images:
+        return
+    for image in stale_images:
+        try:
+            (_question_image_dir() / image.stored_name).unlink(missing_ok=True)
+        except PermissionError:
+            continue
+        db.session.delete(image)
+    db.session.commit()
+
+
+def _remove_shared_image_files(images):
+    upload_root = Path(current_app.config["UPLOAD_FOLDER"]) / "shared_projects"
+    for image in list(images):
+        (upload_root / f"share_{image.project_share_id}" / image.stored_name).unlink(
+            missing_ok=True
+        )
+
+
+def _safe_next_url(candidate, default):
+    return candidate if candidate.startswith("/") and not candidate.startswith("//") else default
+
+
 def _is_markdown_file(filename):
     return Path(filename).suffix.lower() in {".md", ".markdown", ".txt"}
 
@@ -832,9 +1261,24 @@ def _is_markdown_file(filename):
 def _populate_note_from_form(note):
     note.title = request.form.get("title", "").strip() or "未命名筆記"
     note.markdown_content = request.form.get("markdown_content", "")
-    note.category_id = request.form.get("category_id", type=int) or None
+    note.category_id = _note_category_id_from_form()
     note.is_favorite = request.form.get("is_favorite") == "on"
     note.tags = _tags_from_text(request.form.get("tags", ""))
+
+
+def _note_category_id_from_form():
+    new_name = request.form.get("new_category_name", "").strip()[:80]
+    if new_name:
+        category = Category.query.filter_by(
+            user_id=current_user.id,
+            name=new_name,
+        ).first()
+        if not category:
+            category = Category(user_id=current_user.id, name=new_name)
+            db.session.add(category)
+            db.session.flush()
+        return category.id
+    return request.form.get("category_id", type=int) or None
 
 
 def _populate_todo_from_form(todo):

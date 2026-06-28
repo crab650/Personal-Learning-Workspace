@@ -1,0 +1,579 @@
+{% extends "base.html" %}
+
+{% block title %}{{ project.name }} - 共享看板{% endblock %}
+
+{% block public_content %}
+<main class="shared-board-page">
+  <header class="shared-board-header">
+    <div>
+      <p class="shared-eyebrow">共享專案看板</p>
+      <h1>{{ project.name }}</h1>
+      <span>{{ nickname }} 正在協作</span>
+    </div>
+    <form method="post" action="{{ url_for('shared.leave', token=share.token) }}">
+      <button class="btn btn-sm btn-outline-secondary">離開看板</button>
+    </form>
+  </header>
+
+  <nav class="todo-mobile-tabs" aria-label="待辦狀態">
+    {% for group in groups %}
+      <button type="button" role="tab" aria-selected="{{ 'true' if loop.first else 'false' }}" data-status="{{ group.status }}" class="{% if loop.first %}active{% endif %}">
+        <span>{{ group.title }}</span>
+        <strong>{{ group.todos|length }}</strong>
+      </button>
+    {% endfor %}
+  </nav>
+
+  <section class="todo-board shared-todo-board" data-draggable="true">
+    {% for group in groups %}
+      <div class="todo-column todo-column-{{ group.status|lower }} {% if loop.first %}is-mobile-active{% endif %}" data-status="{{ group.status }}">
+        <div class="todo-column-header">
+          <div>
+            <h2>{{ group.title }}</h2>
+            <span><strong class="todo-column-count">{{ group.todos|length }}</strong> 個項目</span>
+          </div>
+          {% if group.status != "Done" %}
+            <button class="todo-quick-add-toggle" type="button" aria-label="新增{{ group.title }}卡片" aria-expanded="false">＋</button>
+          {% endif %}
+        </div>
+
+        {% if group.status != "Done" %}
+          <form class="todo-quick-add-form" hidden>
+            <textarea class="form-control todo-title-input" name="title" placeholder="輸入待辦標題" maxlength="500" rows="1" required></textarea>
+            <small class="text-secondary">Enter 新增，Shift + Enter 換行</small>
+            <div class="todo-quick-add-actions">
+              <button class="btn btn-primary btn-sm" type="submit">新增</button>
+              <button class="btn btn-outline-secondary btn-sm todo-quick-add-cancel" type="button">取消</button>
+            </div>
+          </form>
+        {% endif %}
+
+        <div class="todo-column-list">
+          {% for todo in group.todos %}
+            <article class="todo-card shared-todo-card" data-id="{{ todo.id }}" data-title="{{ todo.title }}">
+              <button class="todo-drag-handle" type="button" draggable="true" aria-label="拖曳「{{ todo.title }}」">⋮⋮</button>
+              <button class="todo-card-title shared-todo-edit {% if todo.status == 'Done' %}done{% endif %}" type="button">{{ todo.title }}</button>
+              <span class="todo-creator-badge">由 {{ todo.created_by_name or "專案擁有者" }} 建立</span>
+              <div class="shared-todo-images">
+                {% for image in todo.shared_images %}
+                  <figure class="shared-todo-image" data-image-id="{{ image.id }}">
+                    <a href="{{ url_for('shared.image_file', token=share.token, image_id=image.id) }}" target="_blank" rel="noopener">
+                      <img src="{{ url_for('shared.image_file', token=share.token, image_id=image.id) }}" alt="待辦圖片" loading="lazy">
+                    </a>
+                    <button type="button" data-remove-image="{{ image.id }}" aria-label="移除圖片">×</button>
+                  </figure>
+                {% endfor %}
+                <label class="shared-image-upload" {% if todo.shared_images|length >= 3 %}hidden{% endif %}>
+                  ＋ 圖片
+                  <input type="file" accept="image/*" data-upload-image>
+                </label>
+              </div>
+              <div class="todo-mobile-card-menu">
+                <button class="todo-mobile-menu-toggle" type="button" aria-label="移動「{{ todo.title }}」" aria-expanded="false">⋯</button>
+                <div class="todo-mobile-menu-items" hidden>
+                  {% for status, label in [("Todo", "待處理"), ("Doing", "進行中"), ("Done", "已完成"), ("Cancel", "已取消")] %}
+                    {% if status != todo.status %}
+                      <button type="button" data-move-status="{{ status }}">移至{{ label }}</button>
+                    {% endif %}
+                  {% endfor %}
+                </div>
+              </div>
+            </article>
+          {% endfor %}
+          <div class="empty-state todo-column-empty" {% if group.todos %}hidden{% endif %}>
+            沒有項目
+          </div>
+        </div>
+      </div>
+    {% endfor %}
+  </section>
+
+  <button class="todo-mobile-add" type="button" aria-label="快速新增待辦">＋</button>
+
+  <dialog id="shared-todo-dialog" class="shared-todo-dialog">
+    <form id="shared-todo-edit-form">
+      <div class="panel-header">
+        <h2>編輯待辦</h2>
+        <button class="dialog-close" type="button" aria-label="關閉">×</button>
+      </div>
+      <input type="hidden" name="todo_id">
+      <div>
+        <label class="form-label">標題</label>
+        <textarea class="form-control todo-title-input" name="title" maxlength="500" rows="3" required></textarea>
+        <small class="text-secondary">Enter 儲存，Shift + Enter 換行</small>
+      </div>
+      <div class="form-actions">
+        <button class="btn btn-primary">儲存</button>
+        <button class="btn btn-outline-secondary dialog-close" type="button">取消</button>
+      </div>
+    </form>
+  </dialog>
+</main>
+{% endblock %}
+
+{% block scripts %}
+  {{ super() }}
+  <script>
+    (() => {
+      const board = document.querySelector(".shared-todo-board");
+      const tabs = document.querySelector(".todo-mobile-tabs");
+      const mobileAdd = document.querySelector(".todo-mobile-add");
+      const dialog = document.getElementById("shared-todo-dialog");
+      const editForm = document.getElementById("shared-todo-edit-form");
+      const createUrl = {{ url_for("shared.create_todo", token=share.token)|tojson }};
+      const reorderUrl = {{ url_for("shared.reorder", token=share.token)|tojson }};
+      const editUrlTemplate = {{ url_for("shared.edit_todo", token=share.token, todo_id=0)|tojson }};
+      const uploadUrlTemplate = {{ url_for("shared.upload_image", token=share.token, todo_id=0)|tojson }};
+      const deleteImageUrlTemplate = {{ url_for("shared.delete_image", token=share.token, image_id=0)|tojson }};
+      const statuses = ["Todo", "Doing", "Done", "Cancel"];
+      const labels = {Todo: "待處理", Doing: "進行中", Done: "已完成", Cancel: "已取消"};
+      let draggedCard = null;
+      let beforeDrag = "";
+      let touchCard = null;
+      let swipeStart = null;
+
+      const cardStatus = (card) => card.closest(".todo-column").dataset.status;
+      const serialize = () => JSON.stringify([...board.querySelectorAll(".todo-column")].map((column) => ({
+        status: column.dataset.status,
+        ids: [...column.querySelectorAll(".todo-card")].map((card) => Number(card.dataset.id))
+      })));
+
+      const updateColumns = () => {
+        board.querySelectorAll(".todo-column").forEach((column) => {
+          const count = column.querySelectorAll(".todo-card").length;
+          column.querySelector(".todo-column-count").textContent = count;
+          column.querySelector(".todo-column-empty").hidden = count > 0;
+          const tabCount = tabs.querySelector(`[data-status="${column.dataset.status}"] strong`);
+          if (tabCount) tabCount.textContent = count;
+        });
+      };
+
+      const activateStatus = (status) => {
+        board.querySelectorAll(".todo-column").forEach((column) => {
+          column.classList.toggle("is-mobile-active", column.dataset.status === status);
+        });
+        tabs.querySelectorAll("[data-status]").forEach((tab) => {
+          const active = tab.dataset.status === status;
+          tab.classList.toggle("active", active);
+          tab.setAttribute("aria-selected", String(active));
+        });
+      };
+
+      const setQuickAddOpen = (column, open) => {
+        const form = column.querySelector(".todo-quick-add-form");
+        const toggle = column.querySelector(".todo-quick-add-toggle");
+        if (!form || !toggle) return;
+        form.hidden = !open;
+        toggle.setAttribute("aria-expanded", String(open));
+        if (open) form.elements.title.focus();
+      };
+
+      const buildMoveMenu = (container, currentStatus) => {
+        container.replaceChildren();
+        statuses.forEach((status) => {
+          if (status === currentStatus) return;
+          const button = document.createElement("button");
+          button.type = "button";
+          button.dataset.moveStatus = status;
+          button.textContent = `移至${labels[status]}`;
+          container.append(button);
+        });
+      };
+
+      const buildImage = (image) => {
+        const figure = document.createElement("figure");
+        figure.className = "shared-todo-image";
+        figure.dataset.imageId = image.id;
+        const link = document.createElement("a");
+        link.href = image.url;
+        link.target = "_blank";
+        link.rel = "noopener";
+        const img = document.createElement("img");
+        img.src = image.url;
+        img.alt = "待辦圖片";
+        img.loading = "lazy";
+        const remove = document.createElement("button");
+        remove.type = "button";
+        remove.dataset.removeImage = image.id;
+        remove.setAttribute("aria-label", "移除圖片");
+        remove.textContent = "×";
+        link.append(img);
+        figure.append(link, remove);
+        return figure;
+      };
+
+      const buildImageArea = (images = []) => {
+        const area = document.createElement("div");
+        area.className = "shared-todo-images";
+        images.forEach((image) => area.append(buildImage(image)));
+        const label = document.createElement("label");
+        label.className = "shared-image-upload";
+        label.hidden = images.length >= 3;
+        label.textContent = "＋ 圖片";
+        const input = document.createElement("input");
+        input.type = "file";
+        input.accept = "image/*";
+        input.dataset.uploadImage = "";
+        label.append(input);
+        area.append(label);
+        return area;
+      };
+
+      const prepareImage = async (file) => {
+        if (!window.createImageBitmap) return file;
+        try {
+          const bitmap = await createImageBitmap(file);
+          const scale = Math.min(1, 1600 / Math.max(bitmap.width, bitmap.height));
+          const canvas = document.createElement("canvas");
+          canvas.width = Math.max(1, Math.round(bitmap.width * scale));
+          canvas.height = Math.max(1, Math.round(bitmap.height * scale));
+          canvas.getContext("2d").drawImage(bitmap, 0, 0, canvas.width, canvas.height);
+          bitmap.close();
+          const blob = await new Promise((resolve) => canvas.toBlob(resolve, "image/webp", 0.72));
+          if (!blob) return file;
+          return new File([blob], "shared-image.webp", {type: "image/webp"});
+        } catch (error) {
+          return file;
+        }
+      };
+
+      const buildCard = (todo) => {
+        const card = document.createElement("article");
+        card.className = "todo-card shared-todo-card";
+        card.dataset.id = todo.id;
+        card.dataset.title = todo.title;
+
+        const handle = document.createElement("button");
+        handle.className = "todo-drag-handle";
+        handle.type = "button";
+        handle.draggable = true;
+        handle.setAttribute("aria-label", `拖曳「${todo.title}」`);
+        handle.textContent = "⋮⋮";
+
+        const title = document.createElement("button");
+        title.className = "todo-card-title shared-todo-edit";
+        title.type = "button";
+        title.textContent = todo.title;
+
+        const creator = document.createElement("span");
+        creator.className = "todo-creator-badge";
+        creator.textContent = `由 ${todo.created_by_name || "專案擁有者"} 建立`;
+
+        const menu = document.createElement("div");
+        menu.className = "todo-mobile-card-menu";
+        const toggle = document.createElement("button");
+        toggle.className = "todo-mobile-menu-toggle";
+        toggle.type = "button";
+        toggle.setAttribute("aria-expanded", "false");
+        toggle.textContent = "⋯";
+        const items = document.createElement("div");
+        items.className = "todo-mobile-menu-items";
+        items.hidden = true;
+        buildMoveMenu(items, todo.status);
+        menu.append(toggle, items);
+        card.append(handle, title, creator, buildImageArea(todo.images), menu);
+        return card;
+      };
+
+      const saveBoard = async () => {
+        const items = [];
+        board.querySelectorAll(".todo-column").forEach((column) => {
+          column.querySelectorAll(".todo-card").forEach((card, index) => {
+            items.push({
+              id: Number(card.dataset.id),
+              status: column.dataset.status,
+              sort_order: index + 1
+            });
+          });
+        });
+        const response = await fetch(reorderUrl, {
+          method: "PUT",
+          headers: {"Content-Type": "application/json"},
+          body: JSON.stringify({items})
+        });
+        if (!response.ok) throw new Error("save failed");
+      };
+
+      const finishReorder = async (card, previousState) => {
+        card.classList.remove("is-dragging");
+        updateColumns();
+        if (serialize() === previousState) return;
+        board.classList.add("is-saving");
+        try {
+          await saveBoard();
+          const status = cardStatus(card);
+          card.querySelector(".todo-card-title").classList.toggle("done", status === "Done");
+          buildMoveMenu(card.querySelector(".todo-mobile-menu-items"), status);
+        } catch (error) {
+          window.alert("看板儲存失敗，頁面將重新載入。");
+          window.location.reload();
+        } finally {
+          board.classList.remove("is-saving");
+        }
+      };
+
+      board.addEventListener("dragstart", (event) => {
+        const handle = event.target.closest(".todo-drag-handle");
+        if (!handle) return event.preventDefault();
+        draggedCard = handle.closest(".todo-card");
+        beforeDrag = serialize();
+        draggedCard.classList.add("is-dragging");
+        event.dataTransfer.effectAllowed = "move";
+        event.dataTransfer.setData("text/plain", draggedCard.dataset.id);
+      });
+
+      board.addEventListener("dragover", (event) => {
+        if (!draggedCard) return;
+        const list = event.target.closest(".todo-column-list");
+        if (!list) return;
+        event.preventDefault();
+        const cards = [...list.querySelectorAll(".todo-card:not(.is-dragging)")];
+        const next = cards.find((card) => {
+          const rect = card.getBoundingClientRect();
+          return event.clientY < rect.top + rect.height / 2;
+        });
+        list.insertBefore(draggedCard, next || list.querySelector(".todo-column-empty"));
+        updateColumns();
+      });
+
+      board.addEventListener("dragend", async () => {
+        if (!draggedCard) return;
+        const card = draggedCard;
+        draggedCard = null;
+        await finishReorder(card, beforeDrag);
+      });
+
+      board.addEventListener("click", async (event) => {
+        const removeImage = event.target.closest("[data-remove-image]");
+        if (removeImage) {
+          if (!window.confirm("確定移除這張圖片？")) return;
+          removeImage.disabled = true;
+          const endpoint = deleteImageUrlTemplate.replace("/images/0", `/images/${removeImage.dataset.removeImage}`);
+          try {
+            const response = await fetch(endpoint, {method: "DELETE"});
+            if (!response.ok) throw new Error("remove failed");
+            const area = removeImage.closest(".shared-todo-images");
+            removeImage.closest(".shared-todo-image").remove();
+            area.querySelector(".shared-image-upload").hidden = false;
+          } catch (error) {
+            window.alert("圖片移除失敗。");
+            removeImage.disabled = false;
+          }
+          return;
+        }
+
+        const quickToggle = event.target.closest(".todo-quick-add-toggle");
+        if (quickToggle) {
+          const column = quickToggle.closest(".todo-column");
+          setQuickAddOpen(column, quickToggle.getAttribute("aria-expanded") !== "true");
+          return;
+        }
+        const cancel = event.target.closest(".todo-quick-add-cancel");
+        if (cancel) {
+          setQuickAddOpen(cancel.closest(".todo-column"), false);
+          return;
+        }
+        const menuToggle = event.target.closest(".todo-mobile-menu-toggle");
+        if (menuToggle) {
+          const items = menuToggle.nextElementSibling;
+          const open = items.hidden;
+          board.querySelectorAll(".todo-mobile-menu-items").forEach((menu) => menu.hidden = true);
+          items.hidden = !open;
+          menuToggle.setAttribute("aria-expanded", String(open));
+          return;
+        }
+        const move = event.target.closest("[data-move-status]");
+        if (move) {
+          const card = move.closest(".todo-card");
+          const target = board.querySelector(`.todo-column[data-status="${move.dataset.moveStatus}"] .todo-column-list`);
+          const state = serialize();
+          target.insertBefore(card, target.querySelector(".todo-column-empty"));
+          await finishReorder(card, state);
+          return;
+        }
+        const edit = event.target.closest(".shared-todo-edit");
+        if (edit) {
+          const card = edit.closest(".todo-card");
+          editForm.elements.todo_id.value = card.dataset.id;
+          editForm.elements.title.value = card.dataset.title;
+          dialog.showModal();
+          resizeTitle(editForm.elements.title);
+        }
+      });
+
+      board.addEventListener("submit", async (event) => {
+        const form = event.target.closest(".todo-quick-add-form");
+        if (!form) return;
+        event.preventDefault();
+        const column = form.closest(".todo-column");
+        const data = new FormData(form);
+        const submit = form.querySelector('[type="submit"]');
+        submit.disabled = true;
+        try {
+          const response = await fetch(createUrl, {
+            method: "POST",
+            headers: {"Content-Type": "application/json"},
+            body: JSON.stringify({
+              title: data.get("title"),
+              status: column.dataset.status
+            })
+          });
+          if (!response.ok) throw new Error("create failed");
+          const todo = await response.json();
+          const list = column.querySelector(".todo-column-list");
+          list.insertBefore(buildCard(todo), list.querySelector(".todo-column-empty"));
+          form.reset();
+          setQuickAddOpen(column, false);
+          updateColumns();
+        } catch (error) {
+          window.alert("新增待辦失敗。");
+        } finally {
+          submit.disabled = false;
+        }
+      });
+
+      board.addEventListener("change", async (event) => {
+        const input = event.target.closest("[data-upload-image]");
+        if (!input || !input.files.length) return;
+        const card = input.closest(".todo-card");
+        const label = input.closest(".shared-image-upload");
+        label.classList.add("is-uploading");
+        input.disabled = true;
+        try {
+          const image = await prepareImage(input.files[0]);
+          const data = new FormData();
+          data.append("image", image, image.name);
+          const endpoint = uploadUrlTemplate.replace("/todos/0/images", `/todos/${card.dataset.id}/images`);
+          const response = await fetch(endpoint, {method: "POST", body: data});
+          const payload = await response.json();
+          if (!response.ok) throw new Error(payload.error || "upload failed");
+          const area = card.querySelector(".shared-todo-images");
+          area.insertBefore(buildImage(payload), label);
+          label.hidden = area.querySelectorAll(".shared-todo-image").length >= 3;
+        } catch (error) {
+          window.alert(error.message || "圖片上傳失敗。");
+        } finally {
+          input.value = "";
+          input.disabled = false;
+          label.classList.remove("is-uploading");
+        }
+      });
+
+      const resizeTitle = (textarea) => {
+        textarea.style.height = "auto";
+        textarea.style.height = `${textarea.scrollHeight}px`;
+      };
+      board.addEventListener("input", (event) => {
+        if (event.target.matches(".todo-title-input")) resizeTitle(event.target);
+      });
+      board.addEventListener("keydown", (event) => {
+        if (!event.target.matches(".todo-title-input")) return;
+        if (event.key === "Enter" && !event.shiftKey) {
+          event.preventDefault();
+          event.target.form.requestSubmit();
+        }
+      });
+      editForm.addEventListener("input", (event) => {
+        if (event.target.matches(".todo-title-input")) resizeTitle(event.target);
+      });
+      editForm.addEventListener("keydown", (event) => {
+        if (!event.target.matches(".todo-title-input")) return;
+        if (event.key === "Enter" && !event.shiftKey) {
+          event.preventDefault();
+          editForm.requestSubmit();
+        }
+      });
+
+      editForm.addEventListener("submit", async (event) => {
+        event.preventDefault();
+        const data = new FormData(editForm);
+        const id = data.get("todo_id");
+        const endpoint = editUrlTemplate.replace("/todos/0", `/todos/${id}`);
+        const submit = editForm.querySelector('[type="submit"]');
+        submit.disabled = true;
+        try {
+          const response = await fetch(endpoint, {
+            method: "PUT",
+            headers: {"Content-Type": "application/json"},
+            body: JSON.stringify({
+              title: data.get("title")
+            })
+          });
+          if (!response.ok) throw new Error("edit failed");
+          const todo = await response.json();
+          const card = board.querySelector(`.todo-card[data-id="${id}"]`);
+          card.dataset.title = todo.title;
+          card.querySelector(".todo-card-title").textContent = todo.title;
+          dialog.close();
+        } catch (error) {
+          window.alert("編輯待辦失敗。");
+        } finally {
+          submit.disabled = false;
+        }
+      });
+
+      dialog.querySelectorAll(".dialog-close").forEach((button) => {
+        button.addEventListener("click", () => dialog.close());
+      });
+      tabs.addEventListener("click", (event) => {
+        const tab = event.target.closest("[data-status]");
+        if (tab) activateStatus(tab.dataset.status);
+      });
+      mobileAdd.addEventListener("click", () => {
+        let column = board.querySelector(".todo-column.is-mobile-active");
+        if (!column?.querySelector(".todo-quick-add-form")) {
+          activateStatus("Todo");
+          column = board.querySelector('.todo-column[data-status="Todo"]');
+        }
+        setQuickAddOpen(column, true);
+      });
+
+      board.addEventListener("pointerdown", (event) => {
+        if (event.pointerType === "mouse" || !window.matchMedia("(max-width: 760px)").matches) return;
+        const handle = event.target.closest(".todo-drag-handle");
+        if (!handle) return;
+        event.preventDefault();
+        touchCard = handle.closest(".todo-card");
+        beforeDrag = serialize();
+        touchCard.classList.add("is-dragging");
+        handle.setPointerCapture(event.pointerId);
+      });
+      board.addEventListener("pointermove", (event) => {
+        if (!touchCard) return;
+        event.preventDefault();
+        const list = touchCard.closest(".todo-column-list");
+        const cards = [...list.querySelectorAll(".todo-card:not(.is-dragging)")];
+        const next = cards.find((card) => {
+          const rect = card.getBoundingClientRect();
+          return event.clientY < rect.top + rect.height / 2;
+        });
+        list.insertBefore(touchCard, next || list.querySelector(".todo-column-empty"));
+      });
+      const finishTouch = async () => {
+        if (!touchCard) return;
+        const card = touchCard;
+        touchCard = null;
+        await finishReorder(card, beforeDrag);
+      };
+      board.addEventListener("pointerup", finishTouch);
+      board.addEventListener("pointercancel", finishTouch);
+
+      board.addEventListener("touchstart", (event) => {
+        if (event.target.closest("form, button, input, select")) return;
+        const touch = event.changedTouches[0];
+        swipeStart = {x: touch.clientX, y: touch.clientY};
+      }, {passive: true});
+      board.addEventListener("touchend", (event) => {
+        if (!swipeStart) return;
+        const touch = event.changedTouches[0];
+        const dx = touch.clientX - swipeStart.x;
+        const dy = touch.clientY - swipeStart.y;
+        swipeStart = null;
+        if (Math.abs(dx) < 50 || Math.abs(dx) <= Math.abs(dy)) return;
+        const current = board.querySelector(".todo-column.is-mobile-active").dataset.status;
+        const index = statuses.indexOf(current);
+        activateStatus(statuses[dx < 0 ? Math.min(index + 1, 3) : Math.max(index - 1, 0)]);
+      });
+    })();
+  </script>
+{% endblock %}

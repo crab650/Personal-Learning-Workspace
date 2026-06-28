@@ -1,107 +1,476 @@
 {% extends "base.html" %}
 
-{% block title %}待辦事項 - Personal Learning & Workspace{% endblock %}
+{% block title %}{{ project.name if project else "待辦事項" }} - Personal Learning & Workspace{% endblock %}
 
 {% block content %}
-<div class="page-heading">
+<div class="page-heading todo-page-heading">
   <div>
-    <h1>待辦事項</h1>
-    <p>管理工作與學習任務，追蹤狀態、優先順序、截止日期與提醒時間。</p>
+    <h1>{{ project.name if project else "待辦事項" }}</h1>
+    <p>
+      {% if project %}
+        {{ project.status }}{% if project.description %} · {{ project.description }}{% endif %}
+      {% else %}
+        未歸屬專案的任務；拖曳卡片可調整順序或狀態。
+      {% endif %}
+    </p>
   </div>
-  <a class="btn btn-primary" href="{{ url_for('pages.todo_new') }}">新增待辦</a>
+  {% if project %}
+    <div class="button-row">
+      <a class="btn btn-outline-secondary" href="{{ url_for('pages.projects') }}">返回專案</a>
+      <a class="btn btn-outline-primary" href="{{ url_for('shared.manage', project_id=project.id) }}">分享</a>
+      <a class="btn btn-outline-primary" href="{{ url_for('pages.project_edit', project_id=project.id) }}">編輯專案</a>
+      <a class="btn btn-primary" href="{{ url_for('pages.todo_new', project_id=project.id, next=url_for('pages.project_detail', project_id=project.id)) }}">新增詳細待辦</a>
+    </div>
+  {% else %}
+    <a class="btn btn-outline-primary" href="{{ url_for('pages.todo_new') }}">新增詳細待辦</a>
+  {% endif %}
 </div>
 
-<section class="panel">
-  <form class="todo-filter-bar" method="get">
-    <input class="form-control" name="q" value="{{ q }}" placeholder="搜尋標題或說明">
-    <select class="form-select" name="group_by">
-      <option value="status" {% if group_by == "status" %}selected{% endif %}>依狀態</option>
-      <option value="category" {% if group_by == "category" %}selected{% endif %}>依分類</option>
-      <option value="project" {% if group_by == "project" %}selected{% endif %}>依專案</option>
-    </select>
-    <select class="form-select" name="status">
-      <option value="">全部狀態</option>
-      {% for status in statuses %}
-        <option value="{{ status }}" {% if selected_status == status %}selected{% endif %}>{{ status }}</option>
-      {% endfor %}
-    </select>
-    <select class="form-select" name="priority">
-      <option value="">全部優先</option>
-      {% for priority in priorities %}
-        <option value="{{ priority }}" {% if selected_priority == priority %}selected{% endif %}>{{ priority }}</option>
-      {% endfor %}
-    </select>
-    <select class="form-select" name="category_id">
-      <option value="">全部分類</option>
-      {% for category in categories %}
-        <option value="{{ category.id }}" {% if selected_category_id == category.id %}selected{% endif %}>{{ category.name }}</option>
-      {% endfor %}
-    </select>
-    <select class="form-select" name="project_id">
-      <option value="">全部專案</option>
-      {% for project in projects %}
-        <option value="{{ project.id }}" {% if selected_project_id == project.id %}selected{% endif %}>{{ project.name }}</option>
-      {% endfor %}
-    </select>
-    <button class="btn btn-outline-primary">搜尋</button>
-  </form>
-</section>
-
-<section class="todo-board">
+<nav class="todo-mobile-tabs" aria-label="待辦狀態">
   {% for group in groups %}
-    <div class="panel todo-column">
-      <div class="panel-header">
-        <h2>{{ group.title }}</h2>
-        <span>{{ group.todos|length }}</span>
+    <button type="button" role="tab" aria-selected="{{ 'true' if loop.first else 'false' }}" data-status="{{ group.status }}" class="{% if loop.first %}active{% endif %}">
+      <span>{{ group.title }}</span>
+      <strong>{{ group.todos|length }}</strong>
+    </button>
+  {% endfor %}
+</nav>
+
+<section class="todo-board {% if project %}project-todo-board{% endif %}" data-draggable="true">
+  {% for group in groups %}
+    <div class="todo-column todo-column-{{ group.status|lower }} {% if loop.first %}is-mobile-active{% endif %}" data-status="{{ group.status }}">
+      <div class="todo-column-header">
+        <div>
+          <h2>{{ group.title }}</h2>
+          <span><strong class="todo-column-count">{{ group.todos|length }}</strong> 個項目</span>
+        </div>
+        {% if group.status != "Done" %}
+          <button class="todo-quick-add-toggle" type="button" aria-label="新增{{ group.title }}卡片" aria-expanded="false">＋</button>
+        {% endif %}
       </div>
+
+      {% if group.status != "Done" %}
+        <form class="todo-quick-add-form" hidden>
+          <textarea class="form-control todo-title-input" name="title" placeholder="輸入待辦標題" maxlength="500" rows="1" required></textarea>
+          <select class="form-select" name="category_id" aria-label="類別">
+            <option value="">未分類</option>
+            {% for category in categories %}
+              <option value="{{ category.id }}">{{ category.name }}</option>
+            {% endfor %}
+          </select>
+          <div class="todo-quick-add-actions">
+            <button class="btn btn-primary btn-sm" type="submit">新增</button>
+            <button class="btn btn-outline-secondary btn-sm todo-quick-add-cancel" type="button">取消</button>
+          </div>
+        </form>
+      {% endif %}
 
       <div class="todo-column-list">
         {% for todo in group.todos %}
-          <article class="todo-card priority-{{ todo.priority|lower }}">
-            <div class="todo-card-head">
-              <span class="priority-badge">{{ todo.priority }}</span>
-              <div class="todo-card-labels">
-                {% if todo.category %}
-                  <span class="tag-badge">{{ todo.category.name }}</span>
-                {% endif %}
-                {% if todo.project %}
-                  <span class="project-badge">{{ todo.project.name }}</span>
-                {% endif %}
+          <article class="todo-card" data-id="{{ todo.id }}">
+            <button class="todo-drag-handle" type="button" draggable="true" aria-label="拖曳「{{ todo.title }}」">⋮⋮</button>
+            <a class="todo-card-title {% if todo.status == 'Done' %}done{% endif %}" href="{{ url_for('pages.todo_edit', todo_id=todo.id, next=url_for('pages.project_detail', project_id=project.id) if project else none) }}">{{ todo.title }}</a>
+            <span class="todo-category-badge">{{ todo.category.name if todo.category else "未分類" }}</span>
+            <div class="todo-mobile-card-menu">
+              <button class="todo-mobile-menu-toggle" type="button" aria-label="移動「{{ todo.title }}」" aria-expanded="false">⋯</button>
+              <div class="todo-mobile-menu-items" hidden>
+                {% for status, label in [("Todo", "待處理"), ("Doing", "進行中"), ("Done", "已完成"), ("Cancel", "已取消")] %}
+                  {% if status != todo.status %}
+                    <button type="button" data-move-status="{{ status }}">移至{{ label }}</button>
+                  {% endif %}
+                {% endfor %}
               </div>
-            </div>
-            <h3 class="{% if todo.status == 'Done' %}done{% endif %}">{{ todo.title }}</h3>
-            {% if todo.description %}
-              <div class="todo-description-preview markdown-body compact-markdown">
-                {{ rendered_descriptions[todo.id]|safe }}
-              </div>
-            {% endif %}
-            <div class="todo-dates">
-              {% if todo.due_date %}
-                <span>截止：{{ todo.due_date.strftime("%Y-%m-%d") }}</span>
-              {% endif %}
-              {% if todo.reminder_at %}
-                <span>提醒：{{ todo.reminder_at.strftime("%Y-%m-%d %H:%M") }}</span>
-              {% endif %}
-            </div>
-            <div class="todo-actions">
-              <form method="post" action="{{ url_for('pages.todo_status', todo_id=todo.id) }}">
-                <select class="form-select form-select-sm" name="status" onchange="this.form.submit()">
-                  {% for option in statuses %}
-                    <option value="{{ option }}" {% if todo.status == option %}selected{% endif %}>{{ option }}</option>
-                  {% endfor %}
-                </select>
-              </form>
-              <a class="btn btn-sm btn-outline-secondary" href="{{ url_for('pages.todo_edit', todo_id=todo.id) }}">編輯</a>
-              <form method="post" action="{{ url_for('pages.todo_delete', todo_id=todo.id) }}">
-                <button class="btn btn-sm btn-outline-danger" onclick="return confirm('確定刪除這個待辦？')">刪除</button>
-              </form>
             </div>
           </article>
-        {% else %}
-          <div class="empty-state">沒有項目</div>
         {% endfor %}
+        <div class="empty-state todo-column-empty" {% if group.todos %}hidden{% endif %}>
+          {{ "完成項目會保留 2 天" if group.status == "Done" and not project else "沒有項目" }}
+        </div>
       </div>
     </div>
   {% endfor %}
 </section>
+
+<button class="todo-mobile-add" type="button" aria-label="快速新增待辦">＋</button>
+{% endblock %}
+
+{% block scripts %}
+  {{ super() }}
+  <script>
+    (() => {
+      const board = document.querySelector('.todo-board[data-draggable="true"]');
+      if (!board) return;
+
+      const mobileTabs = document.querySelector(".todo-mobile-tabs");
+      const mobileAdd = document.querySelector(".todo-mobile-add");
+      const statusOrder = ["Todo", "Doing", "Done", "Cancel"];
+      const statusLabels = {
+        Todo: "待處理",
+        Doing: "進行中",
+        Done: "已完成",
+        Cancel: "已取消"
+      };
+      const todoEditUrlTemplate = {{ url_for("pages.todo_edit", todo_id=0)|tojson }};
+      const projectReturnUrl = {{ (url_for("pages.project_detail", project_id=project.id) if project else "")|tojson }};
+      let draggedCard = null;
+      let originalState = "";
+      let touchCard = null;
+      let swipeStart = null;
+      let suppressNextClick = false;
+
+      const serializeBoard = () => JSON.stringify(
+        [...board.querySelectorAll(".todo-column")].map((column) => ({
+          status: column.dataset.status,
+          ids: [...column.querySelectorAll(".todo-card")].map((card) => Number(card.dataset.id))
+        }))
+      );
+
+      const updateColumns = () => {
+        board.querySelectorAll(".todo-column").forEach((column) => {
+          const count = column.querySelectorAll(".todo-card").length;
+          column.querySelector(".todo-column-count").textContent = count;
+          const empty = column.querySelector(".todo-column-empty");
+          if (empty) empty.hidden = count > 0;
+          const tabCount = mobileTabs?.querySelector(`[data-status="${column.dataset.status}"] strong`);
+          if (tabCount) tabCount.textContent = count;
+        });
+      };
+
+      const setQuickAddOpen = (column, open) => {
+        const form = column.querySelector(".todo-quick-add-form");
+        const toggle = column.querySelector(".todo-quick-add-toggle");
+        if (!form || !toggle) return;
+        form.hidden = !open;
+        toggle.setAttribute("aria-expanded", String(open));
+        if (open) form.elements.title.focus();
+      };
+
+      const activateMobileStatus = (status) => {
+        board.querySelectorAll(".todo-column").forEach((column) => {
+          column.classList.toggle("is-mobile-active", column.dataset.status === status);
+        });
+        mobileTabs?.querySelectorAll("button").forEach((tab) => {
+          const active = tab.dataset.status === status;
+          tab.classList.toggle("active", active);
+          tab.setAttribute("aria-selected", String(active));
+        });
+      };
+
+      const buildMobileMenu = (container, currentStatus) => {
+        container.replaceChildren();
+        statusOrder.forEach((status) => {
+          if (status === currentStatus) return;
+          const button = document.createElement("button");
+          button.type = "button";
+          button.dataset.moveStatus = status;
+          button.textContent = `移至${statusLabels[status]}`;
+          container.append(button);
+        });
+      };
+
+      const createCard = (todo) => {
+        const card = document.createElement("article");
+        card.className = "todo-card";
+        card.dataset.id = todo.id;
+
+        const handle = document.createElement("button");
+        handle.className = "todo-drag-handle";
+        handle.type = "button";
+        handle.draggable = true;
+        handle.setAttribute("aria-label", `拖曳「${todo.title}」`);
+        handle.textContent = "⋮⋮";
+
+        const title = document.createElement("a");
+        title.className = "todo-card-title";
+        title.href = todoEditUrlTemplate.replace("/todos/0/edit", `/todos/${todo.id}/edit`);
+        if (projectReturnUrl) title.href += `?next=${encodeURIComponent(projectReturnUrl)}`;
+        title.textContent = todo.title;
+
+        const category = document.createElement("span");
+        category.className = "todo-category-badge";
+        category.textContent = todo.category || "未分類";
+
+        const menu = document.createElement("div");
+        menu.className = "todo-mobile-card-menu";
+        const menuToggle = document.createElement("button");
+        menuToggle.className = "todo-mobile-menu-toggle";
+        menuToggle.type = "button";
+        menuToggle.setAttribute("aria-label", `移動「${todo.title}」`);
+        menuToggle.setAttribute("aria-expanded", "false");
+        menuToggle.textContent = "⋯";
+        const menuItems = document.createElement("div");
+        menuItems.className = "todo-mobile-menu-items";
+        menuItems.hidden = true;
+        buildMobileMenu(menuItems, todo.status);
+        menu.append(menuToggle, menuItems);
+
+        card.append(handle, title, category, menu);
+        return card;
+      };
+
+      const saveBoard = async () => {
+        const items = [];
+        board.querySelectorAll(".todo-column").forEach((column) => {
+          column.querySelectorAll(".todo-card").forEach((card, index) => {
+            items.push({
+              id: Number(card.dataset.id),
+              status: column.dataset.status,
+              sort_order: index + 1
+            });
+          });
+        });
+
+        const response = await fetch("{{ url_for('api.reorder_todos') }}", {
+          method: "PUT",
+          headers: {"Content-Type": "application/json"},
+          body: JSON.stringify({items})
+        });
+        if (!response.ok) throw new Error("Unable to save todo order");
+      };
+
+      const finishReorder = async (movedCard, beforeState) => {
+        movedCard.classList.remove("is-dragging");
+        const targetStatus = movedCard.closest(".todo-column").dataset.status;
+        const changed = beforeState !== serializeBoard();
+        updateColumns();
+        if (!changed) return;
+
+        board.classList.add("is-saving");
+        try {
+          await saveBoard();
+          movedCard.querySelector(".todo-card-title").classList.toggle("done", targetStatus === "Done");
+        } catch (error) {
+          window.alert("待辦順序儲存失敗，頁面將重新載入。");
+          window.location.reload();
+        } finally {
+          board.classList.remove("is-saving");
+        }
+      };
+
+      board.addEventListener("dragstart", (event) => {
+        const handle = event.target.closest(".todo-drag-handle");
+        if (!handle) {
+          event.preventDefault();
+          return;
+        }
+        draggedCard = handle.closest(".todo-card");
+        originalState = serializeBoard();
+        draggedCard.classList.add("is-dragging");
+        event.dataTransfer.effectAllowed = "move";
+        event.dataTransfer.setData("text/plain", draggedCard.dataset.id);
+      });
+
+      board.addEventListener("dragover", (event) => {
+        if (!draggedCard) return;
+        const list = event.target.closest(".todo-column-list");
+        if (!list) return;
+        event.preventDefault();
+        event.dataTransfer.dropEffect = "move";
+
+        const cards = [...list.querySelectorAll(".todo-card:not(.is-dragging)")];
+        const nextCard = cards.find((card) => {
+          const rect = card.getBoundingClientRect();
+          return event.clientY < rect.top + rect.height / 2;
+        });
+        list.insertBefore(draggedCard, nextCard || list.querySelector(".todo-column-empty"));
+        updateColumns();
+      });
+
+      board.addEventListener("drop", (event) => {
+        if (event.target.closest(".todo-column-list")) event.preventDefault();
+      });
+
+      board.addEventListener("dragend", async () => {
+        if (!draggedCard) return;
+        const movedCard = draggedCard;
+        draggedCard = null;
+        await finishReorder(movedCard, originalState);
+      });
+
+      board.addEventListener("click", async (event) => {
+        if (suppressNextClick) {
+          event.preventDefault();
+          suppressNextClick = false;
+          return;
+        }
+
+        const menuToggle = event.target.closest(".todo-mobile-menu-toggle");
+        if (menuToggle) {
+          const menu = menuToggle.nextElementSibling;
+          const open = menu.hidden;
+          board.querySelectorAll(".todo-mobile-menu-items").forEach((item) => {
+            item.hidden = true;
+            item.previousElementSibling?.setAttribute("aria-expanded", "false");
+          });
+          menu.hidden = !open;
+          menuToggle.setAttribute("aria-expanded", String(open));
+          return;
+        }
+
+        const moveButton = event.target.closest("[data-move-status]");
+        if (moveButton) {
+          const card = moveButton.closest(".todo-card");
+          const status = moveButton.dataset.moveStatus;
+          moveButton.disabled = true;
+          try {
+            const endpoint = "{{ url_for('api.update_todo_status', todo_id=0) }}".replace("/0/status", `/${card.dataset.id}/status`);
+            const response = await fetch(endpoint, {
+              method: "PUT",
+              headers: {"Content-Type": "application/json"},
+              body: JSON.stringify({status})
+            });
+            if (!response.ok) throw new Error("Unable to update todo status");
+            const targetList = board.querySelector(`.todo-column[data-status="${status}"] .todo-column-list`);
+            targetList.insertBefore(card, targetList.querySelector(".todo-column-empty"));
+            await saveBoard();
+            card.querySelector(".todo-card-title").classList.toggle("done", status === "Done");
+            const menuItems = card.querySelector(".todo-mobile-menu-items");
+            buildMobileMenu(menuItems, status);
+            menuItems.hidden = true;
+            card.querySelector(".todo-mobile-menu-toggle").setAttribute("aria-expanded", "false");
+            updateColumns();
+          } catch (error) {
+            window.alert("狀態更新失敗，頁面將重新載入。");
+            window.location.reload();
+          }
+          return;
+        }
+
+        const toggle = event.target.closest(".todo-quick-add-toggle");
+        if (toggle) {
+          const column = toggle.closest(".todo-column");
+          setQuickAddOpen(column, toggle.getAttribute("aria-expanded") !== "true");
+          return;
+        }
+        const cancel = event.target.closest(".todo-quick-add-cancel");
+        if (cancel) setQuickAddOpen(cancel.closest(".todo-column"), false);
+      });
+
+      mobileTabs?.addEventListener("click", (event) => {
+        const tab = event.target.closest("[data-status]");
+        if (tab) activateMobileStatus(tab.dataset.status);
+      });
+
+      mobileAdd?.addEventListener("click", () => {
+        let column = board.querySelector(".todo-column.is-mobile-active");
+        if (!column?.querySelector(".todo-quick-add-form")) {
+          activateMobileStatus("Todo");
+          column = board.querySelector('.todo-column[data-status="Todo"]');
+        }
+        setQuickAddOpen(column, true);
+      });
+
+      board.addEventListener("pointerdown", (event) => {
+        if (event.pointerType === "mouse" || !window.matchMedia("(max-width: 760px)").matches) return;
+        const handle = event.target.closest(".todo-drag-handle");
+        if (!handle) return;
+        event.preventDefault();
+        touchCard = handle.closest(".todo-card");
+        originalState = serializeBoard();
+        touchCard.classList.add("is-dragging");
+        handle.setPointerCapture(event.pointerId);
+      });
+
+      board.addEventListener("pointermove", (event) => {
+        if (!touchCard) return;
+        event.preventDefault();
+        const list = touchCard.closest(".todo-column-list");
+        const cards = [...list.querySelectorAll(".todo-card:not(.is-dragging)")];
+        const nextCard = cards.find((card) => {
+          const rect = card.getBoundingClientRect();
+          return event.clientY < rect.top + rect.height / 2;
+        });
+        list.insertBefore(touchCard, nextCard || list.querySelector(".todo-column-empty"));
+      });
+
+      const finishTouchReorder = async () => {
+        if (!touchCard) return;
+        const movedCard = touchCard;
+        touchCard = null;
+        await finishReorder(movedCard, originalState);
+      };
+      board.addEventListener("pointerup", finishTouchReorder);
+      board.addEventListener("pointercancel", finishTouchReorder);
+
+      board.addEventListener("touchstart", (event) => {
+        if (event.target.closest("form, button, select, input, .todo-drag-handle")) return;
+        const touch = event.changedTouches[0];
+        swipeStart = {x: touch.clientX, y: touch.clientY};
+      }, {passive: true});
+
+      board.addEventListener("touchmove", (event) => {
+        if (!swipeStart) return;
+        const touch = event.changedTouches[0];
+        const dx = touch.clientX - swipeStart.x;
+        const dy = touch.clientY - swipeStart.y;
+        if (Math.abs(dx) > 12 && Math.abs(dx) > Math.abs(dy)) event.preventDefault();
+      }, {passive: false});
+
+      board.addEventListener("touchend", (event) => {
+        if (!swipeStart) return;
+        const touch = event.changedTouches[0];
+        const dx = touch.clientX - swipeStart.x;
+        const dy = touch.clientY - swipeStart.y;
+        swipeStart = null;
+        if (Math.abs(dx) < 50 || Math.abs(dx) <= Math.abs(dy)) return;
+        const active = board.querySelector(".todo-column.is-mobile-active")?.dataset.status || "Todo";
+        const index = statusOrder.indexOf(active);
+        const nextIndex = dx < 0 ? Math.min(index + 1, statusOrder.length - 1) : Math.max(index - 1, 0);
+        if (nextIndex !== index) {
+          activateMobileStatus(statusOrder[nextIndex]);
+          suppressNextClick = true;
+          window.setTimeout(() => {
+            suppressNextClick = false;
+          }, 400);
+        }
+      });
+
+      board.addEventListener("submit", async (event) => {
+        const form = event.target.closest(".todo-quick-add-form");
+        if (!form) return;
+        event.preventDefault();
+
+        const column = form.closest(".todo-column");
+        const submit = form.querySelector('[type="submit"]');
+        const data = new FormData(form);
+        submit.disabled = true;
+        try {
+          const response = await fetch("{{ url_for('api.create_todo') }}", {
+            method: "POST",
+            headers: {"Content-Type": "application/json"},
+            body: JSON.stringify({
+              title: data.get("title"),
+              category_id: data.get("category_id") ? Number(data.get("category_id")) : null,
+              status: column.dataset.status,
+              project_id: {{ (project.id if project else none)|tojson }}
+            })
+          });
+          if (!response.ok) throw new Error("Unable to create todo");
+          const todo = await response.json();
+          const list = column.querySelector(".todo-column-list");
+          list.insertBefore(createCard(todo), list.querySelector(".todo-column-empty"));
+          form.reset();
+          setQuickAddOpen(column, false);
+          updateColumns();
+        } catch (error) {
+          window.alert("新增待辦失敗，請稍後再試。");
+        } finally {
+          submit.disabled = false;
+        }
+      });
+
+      board.addEventListener("keydown", (event) => {
+        if (!event.target.matches(".todo-title-input")) return;
+        if (event.key === "Enter" && !event.shiftKey) {
+          event.preventDefault();
+          event.target.form.requestSubmit();
+        }
+      });
+
+      board.addEventListener("input", (event) => {
+        if (!event.target.matches(".todo-title-input")) return;
+        event.target.style.height = "auto";
+        event.target.style.height = `${event.target.scrollHeight}px`;
+      });
+    })();
+  </script>
 {% endblock %}

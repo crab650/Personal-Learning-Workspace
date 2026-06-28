@@ -12,8 +12,8 @@
     </p>
   </div>
   <div class="button-row">
-    <a class="btn btn-outline-secondary" href="{{ url_for('pages.questions') }}">返回列表</a>
-    <a class="btn btn-primary" href="{{ url_for('pages.question_edit', question_id=question_item.id) }}">編輯</a>
+    <a class="btn btn-outline-secondary" href="{{ return_to }}">返回列表</a>
+    <a class="btn btn-primary" href="{{ url_for('pages.question_edit', question_id=question_item.id, next=return_to) }}">編輯</a>
   </div>
 </div>
 
@@ -39,6 +39,23 @@
     <h2>問題</h2>
     <div class="question-reading-text">{{ question_item.question|e|replace('\n', '<br>')|safe }}</div>
   </article>
+
+  {% if question_item.images %}
+    <article class="question-reading-block">
+      <h2>問題圖片</h2>
+      <div class="question-detail-images">
+        {% for image in question_item.images %}
+          <a href="{{ url_for('pages.question_image_file', image_id=image.id) }}" target="_blank" rel="noopener">
+            <img
+              src="{{ url_for('pages.question_image_file', image_id=image.id) }}"
+              alt="問題圖片 {{ loop.index }}"
+              loading="lazy"
+            >
+          </a>
+        {% endfor %}
+      </div>
+    </article>
+  {% endif %}
 
   <article class="question-reading-block">
     <h2>GPT 回答</h2>
